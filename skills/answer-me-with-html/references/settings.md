@@ -1,6 +1,6 @@
 # Settings, scratch cleanup and updates in Favonis
 
-Use the `shell` tool in `/project`. For each CLI command, use:
+Use the `shell` tool in `/project`. The command below assumes the default skill directory; replace `/skills/answer-me-with-html` with the `sandbox_path` returned by `skill_help` if it differs. For each CLI command, use:
 
 ```bash
 AM_HOME=/tmp/answer-me-with-html AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node /skills/answer-me-with-html/scripts/am.mjs

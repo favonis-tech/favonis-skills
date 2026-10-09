@@ -23,7 +23,7 @@ Reply to the user, and write the draft, in the user's language.
 
 ## 0. When the user wants to change settings
 
-This package runs in the Favonis project sandbox. Read `/skills/answer-me-with-html/references/settings.md` when the user asks to change settings, clean scratch files or update the skill. That turn produces no page.
+This package runs in the Favonis project sandbox. Read `references/settings.md` from this package when the user asks to change settings, clean scratch files or update the skill. That turn produces no page.
 
 ## 1. Decide: produce a page or not
 
@@ -39,7 +39,7 @@ For everyday conclusions use a small page with 2–4 panels. Do not change globa
 
 ## 2. Workflow (one Bash call)
 
-The CLI is bundled in this skill's directory: `scripts/am.mjs`, a single file with no dependencies to install; it needs only Node.js 20+. Below, `am` always means:
+The CLI is bundled in this skill's directory: `scripts/am.mjs`, a single file with no dependencies to install; it needs only Node.js 20+. Use the `sandbox_path` returned by `skill_help` as the skill directory. The command examples use the default `/skills/answer-me-with-html`; replace that prefix if the returned path differs. Read package references with `skill_file` using package-relative paths, or under that sandbox directory. Below, `am` always means:
 
 ```bash
 AM_HOME=/tmp/answer-me-with-html AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node /skills/answer-me-with-html/scripts/am.mjs
@@ -66,7 +66,7 @@ AM_EOF
 ````
 
 4. Read the output:
-   - `✓ <path>`: rendering succeeded. Also check the shell's project saving result; a local file is not delivered until it is saved successfully.
+   - `✓ <path>`: the CLI wrote the local file. Check the shell's `exit_code` and project saving result before delivery. If the intended output is in `deferred_items` or `ignored_items`, or a saving error/issue affects it, report the pending or failed state. Do not regenerate the page just to retry saving; resolve the reported cause and let Favonis synchronize the existing file.
    - `✗ L<line> [component] …` + `Correct example:`: fix that line following the example, then render again.
    - `code n warnings`: a code block is longer than 40 lines, or a diff hunk has a different number of lines than its `@@` header says. Cut the block or fix the header to the lines that make the point and render again, or keep it if every line matters.
    - `STE n warnings`: rewrite the flagged lines as suggested, then render again. Retry at most 2 rounds; if warnings remain, keep the page and say so.
@@ -164,4 +164,4 @@ A reply starts with `# Re: <page title>` and lists `Decisions` and `Comments`, i
 
 Use only when the user explicitly asks for a video ("make a video", "explain it as a video", "3b1b style", "explainer video").
 
-Before you write a video draft, read `/skills/answer-me-with-html/references/video.md` and follow it.
+Before you write a video draft, read `references/video.md` from this package and follow it.
