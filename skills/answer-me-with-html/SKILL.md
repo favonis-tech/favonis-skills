@@ -39,7 +39,7 @@ For everyday conclusions use a small page with 2–4 panels. Do not change globa
 
 ## 2. Workflow (one Bash call)
 
-The CLI is bundled in this skill's directory: `scripts/am.mjs`, a single file with no dependencies to install; it needs only Node.js 20+. Use the `sandbox_path` returned by `skill_help` as the skill directory. The command examples use the default `/skills/answer-me-with-html`; replace that prefix if the returned path differs. Read package references with `skill_file` using package-relative paths, or under that sandbox directory. Below, `am` always means:
+The CLI is bundled in this skill's directory: `scripts/am.mjs`, a single file with no dependencies to install; it needs only Node.js 20+. `skill_read` has two modes. Called with only this skill's `name`, it returns the instructions, the package file list and `sandbox_path`; use that `sandbox_path` as the skill directory. The command examples use the default `/skills/answer-me-with-html`; replace that prefix if the returned path differs. Called with `name` and a package-relative `path` from the file list, such as `references/video.md`, it reads that package file. The same files are also under the sandbox directory. Below, `am` always means:
 
 ```bash
 AM_HOME=/tmp/answer-me-with-html AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node /skills/answer-me-with-html/scripts/am.mjs
