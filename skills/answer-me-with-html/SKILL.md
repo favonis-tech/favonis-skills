@@ -13,6 +13,23 @@ description: >-
   page is quick and cheap to make. Also for explainer videos ("make a video", "做个视频") and for changing
   its settings. Skip only for small talk, a trivial one-line answer, or when the user asks for plain
   text.
+localizations:
+  zh-CN:
+    display-name: 用网页回答
+    description: 把复杂的回答做成一页图文并茂的网页，流程、架构、对比和排查结论都用图表与分区讲清楚，也能生成讲解视频。
+    keywords: [网页, 可视化, 图解, 讲解, 画个图, html]
+  zh-TW:
+    display-name: 用網頁回答
+    description: 把複雜的回答做成一頁圖文並茂的網頁，流程、架構、比較和排查結論都用圖表與分區講清楚，也能產生講解影片。
+    keywords: [網頁, 視覺化, 圖解, 講解, 畫個圖, html]
+  zh-HK:
+    display-name: 用網頁回答
+    description: 把複雜的回答做成一頁圖文並茂的網頁，流程、架構、比較和排查結論都用圖表與分區講清楚，也可以生成講解影片。
+    keywords: [網頁, 視覺化, 圖解, 講解, 畫個圖, html]
+  en-US:
+    display-name: Answer with a web page
+    description: Turns a complex answer into one visual web page, with diagrams and sections for flows, architecture, comparisons and findings. It can also make explainer videos.
+    keywords: [web page, visual, diagram, explainer, html]
 ---
 
 # Answer me with HTML: answer a complex question with one HTML page

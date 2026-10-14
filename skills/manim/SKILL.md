@@ -8,6 +8,23 @@ description: >-
   3Blue1Brown-style explainer videos. Use when the user asks for Manim, a math, science or algorithm
   animation, or an animated explanation built from shapes, formulas and graphs. Not for live-action
   footage, AI-generated video, photo slideshows or slide decks.
+localizations:
+  zh-CN:
+    display-name: Manim 数学动画
+    description: 用代码生成精确的数学、算法和科学动画，导出 MP4、GIF 或 PNG，适合公式推导、函数图像和 3Blue1Brown 风格的讲解视频。
+    keywords: [动画, 数学视频, 公式, 算法动画, 3b1b, manim]
+  zh-TW:
+    display-name: Manim 數學動畫
+    description: 用程式碼產生精確的數學、演算法和科學動畫，匯出 MP4、GIF 或 PNG，適合公式推導、函數圖形和 3Blue1Brown 風格的講解影片。
+    keywords: [動畫, 數學影片, 公式, 演算法動畫, 3b1b, manim]
+  zh-HK:
+    display-name: Manim 數學動畫
+    description: 用程式碼生成精確的數學、算法和科學動畫，匯出 MP4、GIF 或 PNG，適合公式推導、函數圖像和 3Blue1Brown 風格的講解影片。
+    keywords: [動畫, 數學影片, 公式, 算法動畫, 3b1b, manim]
+  en-US:
+    display-name: Manim Animation
+    description: Create precise math, algorithm and science animations in code and export them as MP4, GIF or PNG, for derivations, function graphs and 3Blue1Brown-style explainers.
+    keywords: [animation, math video, formula, algorithm, 3b1b, manim]
 ---
 
 # Manim animation
