@@ -17,3 +17,13 @@ localizations:
 ```
 
 每种语言的 `display-name` 和 `description` 必填，`keywords` 可省。模型读取技能时只拿到正文，看不到这些文案。`answer-me-with-html` 由 `scripts/sync-skills.py` 从维护 fork 整包同步，它的文案改在 fork 里。
+
+## 测试
+
+在装有技能依赖的环境（Favonis 沙箱或同等的 Python 环境）里运行：
+
+```sh
+python -m unittest discover -s scripts
+```
+
+需要渲染的用例按依赖自动跳过：Manim 渲染要有 Manim 和 FFmpeg；公文的版面实测要有沙箱的 `render-office`，本机可以在 `PATH` 里放一个同名脚本，用能显示中文字体的 LibreOffice 渲染。
