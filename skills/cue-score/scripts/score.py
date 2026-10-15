@@ -23,6 +23,7 @@ from scipy.signal import butter, fftconvolve, sosfilt
 SR = 48000
 STYLES = ("cinematic", "electronic")
 OUTPUT = {".mp3": ["-c:a", "libmp3lame", "-b:a", "192k"], ".m4a": ["-c:a", "aac", "-b:a", "192k"], ".wav": ["-c:a", "pcm_s16le"]}
+LEAD_INS = ("riser", "reverse", "swell")   # 铺垫音效的 t 是落点：在 t - dur 起音、在 t 收住
 SFX_DEFAULT_DUR = {"riser": 2.0, "reverse": 1.0, "swell": 2.0, "whoosh": 0.8, "sparkle": 2.0, "glitch": 0.4, "drop": 1.2}
 QUALITIES = {
     "": (0, 4, 7), "maj": (0, 4, 7), "m": (0, 3, 7), "min": (0, 3, 7), "5": (0, 7), "sus2": (0, 2, 7), "sus4": (0, 5, 7),
@@ -630,6 +631,26 @@ def validate(timeline):
         raise Invalid("\n".join(errors))
 
 
+KEY_SHAPES = ((0, 2, 4, 5, 7, 9, 11), (0, 2, 3, 5, 7, 8, 9, 10, 11))   # 大调；小调含升六、升七级，容纳 IV 和 V 大三和弦
+
+
+def key_warnings(timeline):
+    """相邻两个有和弦的段落找不到同一个调能容纳全部和弦音时提示换调；突然换调在短片里多半听着像走错了。"""
+    warnings, previous = [], None
+    for s in timeline.get("sections", []):
+        chords = [parse_chord(c) for c in s.get("chords", [])]
+        tones = {(root + i) % 12 for root, intervals, _ in filter(None, chords) for i in intervals}
+        if not tones:
+            continue
+        if previous:
+            union = tones | previous[1]
+            if not any(all((pc - tonic) % 12 in shape for pc in union) for tonic in range(12) for shape in KEY_SHAPES):
+                warnings.append(f"{previous[0]} → {s.get('name', 'unnamed')}: no single key holds both chord loops "
+                                f"({' '.join(previous[2])} / {' '.join(s['chords'])}); keep the piece in one key")
+        previous = (s.get("name", "unnamed"), tones, s["chords"])
+    return warnings
+
+
 def render(timeline, seed):
     validate(timeline)
     rng = np.random.default_rng(seed)
@@ -640,7 +661,8 @@ def render(timeline, seed):
         sfx_boom(mix, h["t"], {"gain": 1.0, "pan": 0.0}, song.chord_at(h["t"]), k=h.get("k", 1))
     for c in timeline.get("cues", []):
         o = {"gain": c.get("gain", 1.0), "pan": c.get("pan", 0.0), "dur": c.get("dur", SFX_DEFAULT_DUR.get(c["name"], 0.5)), "note": c.get("note")}
-        SFX[c["name"]](mix, c["t"], o, song.chord_at(c["t"]))
+        start = c["t"] - o["dur"] if c["name"] in LEAD_INS else c["t"]
+        SFX[c["name"]](mix, start, o, song.chord_at(max(0.0, start)))
     return master(mix, song, rng)
 
 
@@ -667,9 +689,13 @@ def main():
         write_wav(raw, audio)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         measured = loudnorm(raw, args.out)
-    print(json.dumps({"ok": True, "output": str(args.out), "duration": round(timeline["duration"], 3), "style": timeline.get("style", "cinematic"),
-                      "sections": len(timeline.get("sections", [])), "hits": len(timeline.get("hits", [])), "cues": len(timeline.get("cues", [])),
-                      "loudness_before_normalization": measured, "loudness": -14}, ensure_ascii=False, indent=2))
+    report = {"ok": True, "output": str(args.out), "duration": round(timeline["duration"], 3), "style": timeline.get("style", "cinematic"),
+              "sections": len(timeline.get("sections", [])), "hits": len(timeline.get("hits", [])), "cues": len(timeline.get("cues", [])),
+              "loudness_before_normalization": measured, "loudness": -14}
+    warnings = key_warnings(timeline)
+    if warnings:
+        report["warnings"] = warnings
+    print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

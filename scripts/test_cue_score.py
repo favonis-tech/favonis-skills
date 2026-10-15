@@ -67,6 +67,22 @@ class RenderTests(unittest.TestCase):
         self.assertGreater(rms(audio, 1.0, 1.03), 1e-3)
         self.assertLess(rms(audio, 2.5, 2.99), rms(audio, 3.0, 3.3) / 20)
 
+    def test_lead_ins_land_on_their_time(self):
+        audio = score.render(timeline(hits=[], cues=[{"t": 3.0, "name": "riser", "dur": 2}]), 1)
+        self.assertLess(rms(audio, 0.2, 0.95), 1e-4)
+        before = rms(audio, 2.4, 2.95)
+        self.assertGreater(before, rms(audio, 1.05, 1.6) * 10)
+        self.assertLess(rms(audio, 3.05, 3.3), before / 5)
+
+    def test_key_change_warnings(self):
+        def loops(*chords):
+            return {"sections": [{"name": f"s{i}", "chords": c} for i, c in enumerate(chords)]}
+
+        self.assertEqual(score.key_warnings(loops(["Dm", "Bb", "F", "C"], ["Gm", "Dm", "Bb", "A"], ["C", "G", "Am", "F"])), [])
+        warnings = score.key_warnings(loops(["Am", "F", "C", "Em"], ["Fm", "Db", "Ab", "Eb"]))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("s0 → s1", warnings[0])
+
     def test_sections_play_and_seed_is_reproducible(self):
         song = timeline(sections=[{"name": "a", "start": 0, "end": 4, "chords": ["Dm", "Bb"], "energy": 3}], hits=[])
         for style in score.STYLES:
