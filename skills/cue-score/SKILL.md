@@ -95,11 +95,11 @@ From the promo-film skill, export the timeline with `promo.py timeline` instead 
 
 ## Workflow
 
-1. Write or export the timeline, for example `promo/light/timeline.json`.
+1. Write or export the timeline, for example `promo/abyss/timeline.json`.
 2. Run the script:
 
    ```bash
-   python /skills/cue-score/scripts/score.py promo/light/timeline.json --out promo/light/score.mp3
+   python /skills/cue-score/scripts/score.py promo/abyss/timeline.json --out promo/abyss/score.mp3
    ```
 
    On `"ok": false`, `error` lists every invalid field with its section or cue index; fix them and run it again. `warnings` point out key changes between sections; change the chords unless the user asked for a modulation. For a different arrangement of the same timeline, pass another `--seed`.

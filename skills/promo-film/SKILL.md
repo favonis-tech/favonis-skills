@@ -39,13 +39,13 @@ Write the film as one JavaScript file for the bundled engine, check and review i
 
 ## Workflow
 
-1. **Brief.** Start working without asking questions. Defaults: 16:9, 45–75 seconds, on-screen text and subtitles in the user's language with English secondary lines for a cinematic feel, a synthesized score, delivered as the HTML player. Ask only when the subject itself is unclear; never ask whether to render an MP4.
+1. **Brief.** Start working without asking questions. Defaults: 16:9, 45–75 seconds, on-screen text and subtitles in the user's language with English secondary lines for a cinematic feel, a synthesized score, delivered as the HTML player. Ask only when the subject itself is unclear.
 2. **Storyboard.** Write a short table of scenes: name, bars, what appears and moves, the subtitle, the sound. Pick the tempo first; a bar lasts `240 / bpm` seconds. Follow craft.md: every scene shows what its subtitles say and keeps moving.
-3. **Write** `promo/<slug>/film.js`, one `scene()` per row of the storyboard. example.js teaches technique only: build the storyboard, the on-screen copy, the subtitles and the closing line from the user's subject, and do not reuse the example's scenes or lines, even when the subject is the same.
+3. **Write** `promo/<slug>/film.js`, one `scene()` per row of the storyboard. example.js shows technique; the storyboard and every word come from the user's subject.
 4. **Check** and review a contact sheet:
 
    ```bash
-   python /skills/promo-film/scripts/promo.py check promo/light/film.js --sheet review/light.png
+   python /skills/promo-film/scripts/promo.py check promo/abyss/film.js --sheet review/abyss.png
    ```
 
    On `"ok": false`, fix the error it names (scene, time and `film.js` line) and run it again. Resolve every entry in `issues`. Open every page listed in `sheets` with `project_read` and work through the review list in craft.md. `--at 3.5,12.2` picks other moments; a single moment comes out full size. Delete the `review` folder with `project_delete` before delivering. If you cannot view images, say that the visual check was not performed.
@@ -53,7 +53,7 @@ Write the film as one JavaScript file for the bundled engine, check and review i
    - A synthesized, cue-synced score when the `cue-score` skill is available: export the timeline, then read that skill and follow it to write `promo/<slug>/score.mp3`. If its report has `warnings`, such as a key change, fix the chords in `film.js` and regenerate.
 
      ```bash
-     python /skills/promo-film/scripts/promo.py timeline promo/light/film.js --out promo/light/timeline.json
+     python /skills/promo-film/scripts/promo.py timeline promo/abyss/film.js --out promo/abyss/timeline.json
      ```
 
    - A track the user provides, or music from the platform's audio tool. Generated music is not synchronized with the cuts: ask for the film's tempo in the prompt and keep hits on bar boundaries.
@@ -61,18 +61,21 @@ Write the film as one JavaScript file for the bundled engine, check and review i
 6. **Build** the player and deliver it. Build only after the last edit to `film.js` has passed `check` and you have looked at the frames of the scenes it changed. Do not edit the film after building; if a change is still needed, check and review it, then rebuild before delivering.
 
    ```bash
-   python /skills/promo-film/scripts/promo.py build promo/light/film.js --audio promo/light/score.mp3 --out outputs/光.html
+   python /skills/promo-film/scripts/promo.py build promo/abyss/film.js --audio promo/abyss/score.mp3 --out outputs/海渊七号.html
    ```
 
-   The HTML embeds the engine, the film, font subsets and the audio, so it plays offline and in the project preview. Call `present_files` with the HTML only; `film.js`, the timeline and the score stay in the project for later edits but are not deliverables. Close with one or two sentences: the title, its length, what it covers, any `warnings` (such as an audio track shorter or longer than the film) and any check you could not perform. Do not list files or paths, add a scene table, or offer an MP4.
-7. **Render an MP4** only when the user explicitly asks for a video file:
-
-   ```bash
-   python /skills/promo-film/scripts/promo.py render promo/light/film.js --audio promo/light/score.mp3 --out outputs/光.mp4
-   ```
-
-   Pass `timeout_ms: 1800000` to the shell. Rendering is CPU-bound and slow: in the sandbox plan on roughly 20–45 minutes per minute of 1080p film, and rely on the `eta_seconds` the first call reports. Each call stops before its `--budget` (default 1500 seconds) and reports `"complete": false` with `done_frames`, `total_frames` and `eta_seconds`; tell the user the estimate, then run the same command again until `"complete": true`. Finished chunks are reused only while the film is unchanged. `--quality draft` (960×540, no motion blur) needs about a fifth of the work and suits previews; `720p` sits in between. Deliver the MP4 with `present_files` and state its length and resolution.
+   The HTML embeds the engine, the film, font subsets and the audio, so it plays offline and in the project preview. Call `present_files` with the HTML only; `film.js`, the timeline and the score stay in the project for later edits but are not deliverables. Close with one or two sentences: the title, its length, what it covers, any `warnings` (such as an audio track shorter or longer than the film) and any check you could not perform.
 
 ## Revision
 
-Edit `film.js`, run `check` again, and rebuild to the same output path; the project keeps earlier versions in its history. Change only the scenes the user commented on. When scene lengths, `music`, `hits` or `sfx` change, export the timeline and regenerate the score before building. Re-render the MP4 only if the user still wants one. Deliver only the rebuilt HTML (or MP4).
+Edit `film.js`, run `check` again, and rebuild to the same output path; the project keeps earlier versions in its history. Change only the scenes the user commented on. When scene lengths, `music`, `hits` or `sfx` change, export the timeline and regenerate the score before building. Deliver the rebuilt HTML.
+
+## Video files
+
+Only when the user asks for a video file, render an MP4 from the same film:
+
+```bash
+python /skills/promo-film/scripts/promo.py render promo/abyss/film.js --audio promo/abyss/score.mp3 --out outputs/海渊七号.mp4
+```
+
+Pass `timeout_ms: 1800000` to the shell. Rendering is CPU-bound and slow: in the sandbox plan on roughly 20–45 minutes per minute of 1080p film, and rely on the `eta_seconds` the first call reports. Each call stops before its `--budget` (default 1500 seconds) and reports `"complete": false` with `done_frames`, `total_frames` and `eta_seconds`; tell the user the estimate, then run the same command again until `"complete": true`. Finished chunks are reused only while the film is unchanged. `--quality draft` (960×540, no motion blur) needs about a fifth of the work and suits previews; `720p` sits in between. Deliver the MP4 with `present_files` and state its length and resolution.
