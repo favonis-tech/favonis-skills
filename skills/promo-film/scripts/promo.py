@@ -54,7 +54,15 @@ class Failure(Exception):
 
 
 def emit(report, code=0):
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    """每个字段一行，列表里的对象各占一行：报告短到不用 head/tail 截取就能读完。"""
+    lines = []
+    for key, value in report.items():
+        if isinstance(value, list) and value and isinstance(value[0], (dict, list)):
+            items = ",\n".join("    " + json.dumps(v, ensure_ascii=False) for v in value)
+            lines.append(f"  {json.dumps(key)}: [\n{items}\n  ]")
+        else:
+            lines.append(f"  {json.dumps(key)}: {json.dumps(value, ensure_ascii=False)}")
+    print("{\n" + ",\n".join(lines) + "\n}")
     sys.exit(code)
 
 
@@ -363,10 +371,12 @@ def command_check(args):
             motion += scanned["motion"]
         issues += static_issues(info, times, motion) + sound_issues(info)
         report = {
-            "ok": True, "duration": round(info["duration"], 2), "size": info["size"], "bpm": info["bpm"], "webgl": info["webgl"],
+            "ok": True, "issues": issues, "duration": round(info["duration"], 2), "size": info["size"], "bpm": info["bpm"],
             "scenes": [{"name": s["name"], "start": round(s["start"], 2), "end": round(s["end"], 2)} for s in info["scenes"]],
-            "subtitles": len(info["subs"]), "issues": issues, "fonts": fonts,
+            "subtitles": len(info["subs"]),
         }
+        if fonts["missing"]:
+            report["missing_fonts"] = fonts["missing"]
         if args.sheet:
             times = sheet_times(info, args.frames, args.at)
             images = [page.frame(t, 0.5) for t in times]
@@ -445,7 +455,9 @@ def command_build(args):
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
     report = {"ok": True, "output": str(out), "bytes": out.stat().st_size, "duration": round(info["duration"], 2),
-              "audio": bool(args.audio), "fonts": fonts}
+              "audio": bool(args.audio)}
+    if fonts["missing"]:
+        report["missing_fonts"] = fonts["missing"]
     warnings = audio_warnings(args.audio, info["duration"])
     if warnings:
         report["warnings"] = warnings
