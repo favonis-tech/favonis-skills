@@ -301,14 +301,32 @@ def sheet_times(info, frames, at):
     if frames:
         n = max(1, frames)
         return [round(info["duration"] * (k + 0.5) / n, 2) for k in range(n)]
-    scenes = info["scenes"]
-    if len(scenes) > 8:
-        scenes = [scenes[round(k * (len(scenes) - 1) / 7)] for k in range(8)]
-    return [round(s["start"] + (s["end"] - s["start"]) * 0.6, 2) for s in scenes]
+    # 默认跟着旁白取帧：每条字幕正中一帧，画面和它此刻的字幕同框；没有字幕的场景取 60% 处
+    times = []
+    for s in info["scenes"]:
+        subs = [x for x in info["subs"] if x["scene"] == s["name"]]
+        times += [round((x["start"] + x["end"]) / 2, 2) for x in subs] or [round(s["start"] + (s["end"] - s["start"]) * 0.6, 2)]
+    return times
+
+
+SHEET_PAGE = 8
 
 
 def contact_sheet(images, times, info, path):
-    """两列拼图，每格保持草稿帧原尺寸（960 宽）以便看清细节，格下标注时间与场景序号。"""
+    """两列拼图，每格保持草稿帧原尺寸（960 宽）以便看清细节，格下标注时间与场景序号。
+    超过 SHEET_PAGE 帧时分页写成 <名字>-1.png、<名字>-2.png……，返回写出的路径。"""
+    if len(images) <= SHEET_PAGE:
+        contact_page(images, times, info, path)
+        return [path]
+    pages = []
+    for n, i in enumerate(range(0, len(images), SHEET_PAGE), 1):
+        page = path.with_name(f"{path.stem}-{n}{path.suffix}")
+        contact_page(images[i:i + SHEET_PAGE], times[i:i + SHEET_PAGE], info, page)
+        pages.append(page)
+    return pages
+
+
+def contact_page(images, times, info, path):
     from PIL import Image, ImageDraw
 
     tiles = [Image.open(io.BytesIO(data)).convert("RGB") for data in images]
@@ -352,8 +370,8 @@ def command_check(args):
         if args.sheet:
             times = sheet_times(info, args.frames, args.at)
             images = [page.frame(t, 0.5) for t in times]
-            contact_sheet(images, times, info, Path(args.sheet))
-            report.update(sheet=str(args.sheet), sheet_times=times)
+            pages = contact_sheet(images, times, info, Path(args.sheet))
+            report.update(sheets=[str(p) for p in pages], sheet_times=times)
         if page.errors:
             raise Failure("\n".join(page.errors))
     finally:
@@ -516,8 +534,9 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     check = sub.add_parser("check", help="Load the film, report errors and layout issues, optionally write a contact sheet")
     check.add_argument("film")
-    check.add_argument("--sheet", type=Path, help="Contact sheet PNG in two columns; default one frame per scene, up to 8")
-    check.add_argument("--frames", type=int, help="Evenly spaced frames instead of one per scene")
+    check.add_argument("--sheet", type=Path, help="Contact sheet PNG in two columns, 8 frames per page; "
+                       "by default one frame in the middle of every subtitle and one per scene without subtitles")
+    check.add_argument("--frames", type=int, help="Evenly spaced frames instead of the subtitle frames")
     check.add_argument("--at", help="Comma-separated film times in seconds")
     timeline = sub.add_parser("timeline", help="Export the music timeline JSON for the cue-score skill")
     timeline.add_argument("film")

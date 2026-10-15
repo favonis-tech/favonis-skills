@@ -23,6 +23,8 @@ scene({
   draw(t, d) {
     text('出界的标题', W - 40, H / 2, { size: 120 });
     text('压住字幕', W / 2, H - 60, { size: 40 });
+    text('上层文字', W / 2, H * .3, { size: 60 });
+    text('下层文字', W / 2 + 30, H * .3 + 20, { size: 60 });
   },
 });
 scene({
@@ -77,6 +79,11 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual({(s["energy"], tuple(s["chords"])) for s in timeline["sections"]}, {(0, ())})
         self.assertEqual(len(timeline["cues"]), 1)
 
+    def test_default_frames_follow_the_subtitles(self):
+        info = {"duration": 9.0, "subs": [{"start": 1, "end": 3, "scene": "a"}, {"start": 3.5, "end": 4.5, "scene": "a"}],
+                "scenes": [{"name": "a", "start": 0, "end": 5}, {"name": "b", "start": 5, "end": 8}]}
+        self.assertEqual(promo.sheet_times(info, None, None), [2.0, 4.0, 6.8])
+
     def test_subtitle_timing_issues(self):
         info = {"scenes": [{"name": "a", "start": 0, "end": 5}], "subs": [
             {"start": 0, "end": 1, "text": "这一句字幕实在太长了根本读不完", "scene": "a"},
@@ -110,8 +117,14 @@ class BrowserTests(unittest.TestCase):
             issues = {(i["kind"], i["text"]) for i in report["issues"]}
             self.assertIn(("clipped", "出界的标题"), issues)
             self.assertIn(("under-subtitle", "压住字幕"), issues)
+            self.assertIn(("text-overlap", "上层文字 / 下层文字"), issues)
             self.assertEqual(report["sheet_times"], [0.5, 2.5])
+            self.assertEqual(report["sheets"], ["review/sheet.png"])
             self.assertTrue(Path(directory, "review/sheet.png").stat().st_size)
+            # 超过一页的帧分页写出
+            report = json.loads(run_script(directory, "check", "film.js", "--sheet", "review/many.png", "--frames", "9").stdout)
+            self.assertEqual(report["sheets"], ["review/many-1.png", "review/many-2.png"])
+            self.assertTrue(all(Path(directory, p).stat().st_size for p in report["sheets"]))
 
     def test_check_reports_static_pictures_and_misplaced_sounds(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -35,9 +35,9 @@
 
 Run `check` with a contact sheet and go through this list before building:
 
-1. For every frame of the sheet (one per scene, taken at 60 % of the scene), write down what is on screen, whether it shows what that scene's subtitles say, and whether every label sits fully inside its shape and is not covered by another element or by leftover particles, glows or lines, and whether an on-screen sentence shows together with a subtitle.
-2. For every scene whose subtitles describe a change, open one early and one late frame with `--at` (a single frame comes out full size) and confirm the change happens between them.
-3. Fix what you found and every `issues` entry, run `check` again, and look again at the scenes you changed.
+1. The sheet has a frame in the middle of every subtitle, with that subtitle on screen, and one frame for each scene without subtitles; past eight frames it comes in pages, listed in `sheets`. Open every page. For each frame, write down what is on screen and check that the picture shows what its subtitle says at that moment, that every label sits fully inside its shape, that nothing covers text (another element, leftover particles, glows or lines), and that no on-screen sentence shows together with the subtitle.
+2. For a subtitle that describes a change, also open the moment it starts with `--at` (a single frame comes out full size): the change has to happen while the subtitle is on screen, and nothing may contradict the subtitle before it does.
+3. Fix what you found and every `issues` entry. After the last edit, run `check` again and look at the frames of every scene you changed; build only when that pass is clean.
 
 ## check issues
 
@@ -52,5 +52,6 @@ Run `check` with a contact sheet and go through this list before building:
 | `static` | Nothing changes for `seconds` from `at`. Add the motion the narration describes, spread the reveals, or shorten the scene. |
 | `double-impact` | A `boom` or `hit` sits on a hit, which already sounds. Remove the effect. |
 | `lead-in-off-beat` | A lead-in lands on nothing. Move its `t` to a scene start (`t: 0`), a hit, a subtitle start or a beat. |
+| `text-overlap` | Two texts overlap at `at`. Move or shrink one, or show them at different times. |
 
 A JavaScript error stops the check and reports the scene, its local time and the `film.js` line. A syntax error reports the line from Node's parser.

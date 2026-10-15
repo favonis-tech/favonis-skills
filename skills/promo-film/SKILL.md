@@ -48,7 +48,7 @@ Write the film as one JavaScript file for the bundled engine, check and review i
    python /skills/promo-film/scripts/promo.py check promo/light/film.js --sheet review/light.png
    ```
 
-   On `"ok": false`, fix the error it names (scene, time and `film.js` line) and run it again. Resolve every entry in `issues`. Open the sheet with `project_read` and work through the review list in craft.md: it shows one frame per scene (up to 8) in two columns; `--at 3.5,12.2` picks moments, and a single moment comes out full size for a closer look. Delete the `review` folder with `project_delete` before delivering. If you cannot view images, say that the visual check was not performed.
+   On `"ok": false`, fix the error it names (scene, time and `film.js` line) and run it again. Resolve every entry in `issues`. Open every page listed in `sheets` with `project_read` and work through the review list in craft.md. `--at 3.5,12.2` picks other moments; a single moment comes out full size. Delete the `review` folder with `project_delete` before delivering. If you cannot view images, say that the visual check was not performed.
 5. **Sound.** Choose one:
    - A synthesized, cue-synced score when the `cue-score` skill is available: export the timeline, then read that skill and follow it to write `promo/<slug>/score.mp3`. If its report has `warnings`, such as a key change, fix the chords in `film.js` and regenerate.
 
@@ -58,7 +58,7 @@ Write the film as one JavaScript file for the bundled engine, check and review i
 
    - A track the user provides, or music from the platform's audio tool. Generated music is not synchronized with the cuts: ask for the film's tempo in the prompt and keep hits on bar boundaries.
    - No sound, only when the user asks for it: skip `--audio` below.
-6. **Build** the player and deliver it:
+6. **Build** the player and deliver it. Build only after the last edit to `film.js` has passed `check` and you have looked at the frames of the scenes it changed. Do not edit the film after building; if a change is still needed, check and review it, then rebuild before delivering.
 
    ```bash
    python /skills/promo-film/scripts/promo.py build promo/light/film.js --audio promo/light/score.mp3 --out outputs/光.html

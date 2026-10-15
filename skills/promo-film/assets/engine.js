@@ -113,8 +113,10 @@ function text(str, x, y, o = {}) {
   const put = (s, px) => { if (o.stroke) ctx.strokeText(s, px, y); if (o.fill !== false) ctx.fillText(s, px, y); };
   if (manual) { let px = left; for (const c of chars) { put(c, px); px += ctx.measureText(c).width + manual; } }
   else put(str, left);
-  const size = o.size || 40, top = (o.base || 'middle') === 'middle' ? y - size * .6 : (o.base === 'top' ? y : y - size);
-  record(str, left, top, left + width, top + size * 1.2, ctx.globalAlpha);
+  // 按实际字形边界记录，留白不算，检查重叠和越界时才不会误报
+  const ink = ctx.measureText(str);
+  record(str, left - ink.actualBoundingBoxLeft, y - ink.actualBoundingBoxAscent, manual ? left + width : left + ink.actualBoundingBoxRight,
+    y + ink.actualBoundingBoxDescent, ctx.globalAlpha);
   ctx.restore();
   return width;
 }
@@ -185,7 +187,8 @@ function title(str, x, y, o = {}) {
     }
     px += widths[i] + ls;
   });
-  record(str, left, y - size * .6, left + total, y + size * .6, base);
+  const ink = ctx.measureText(String(str));
+  record(str, left, y - ink.actualBoundingBoxAscent, left + total, y + ink.actualBoundingBoxDescent, base);
   ctx.restore();
   return total;
 }
@@ -713,6 +716,7 @@ const SIG = document.createElement('canvas');
 SIG.width = 96; SIG.height = 54;
 const sigctx = SIG.getContext('2d', { willReadFrequently: true });
 const scanSeen = new Set();
+const OVERLAP_SHARE = .1;   // 重叠面积占较小文字字形框的比例
 let lastSig = null, lastScene = null;
 function signature() {
   sigctx.drawImage(layer, 0, 0, SIG.width, SIG.height);
@@ -739,6 +743,19 @@ function scan(times) {
       const edge = b.x0 < W * .03 || b.x1 > W * .97 || b.y0 < H * .03 || b.y1 > H * .97;
       if (out || edge) { scanSeen.add(key); issues.push({ kind: out ? 'clipped' : 'edge', scene: sc.name, at: +T.toFixed(2), text: b.text, box: [b.x0, b.y0, b.x1, b.y1].map(Math.round) }); }
       else if (subOn && b.y1 > band) { scanSeen.add(key); issues.push({ kind: 'under-subtitle', scene: sc.name, at: +T.toFixed(2), text: b.text, box: [b.x0, b.y0, b.x1, b.y1].map(Math.round) }); }
+    }
+    // 两段不同的文字明显重叠；同一段文字叠画（故障字、描边加填充）不算
+    for (let i = 0; i < track.length; i++) for (let j = i + 1; j < track.length; j++) {
+      const p = track[i], q = track[j];
+      if (p.text === q.text) continue;
+      const w = Math.min(p.x1, q.x1) - Math.max(p.x0, q.x0), h = Math.min(p.y1, q.y1) - Math.max(p.y0, q.y0);
+      if (w <= 0 || h <= 0) continue;
+      const share = w * h / Math.min((p.x1 - p.x0) * (p.y1 - p.y0), (q.x1 - q.x0) * (q.y1 - q.y0));
+      // 按两框的位置去重：滚动计数器每帧文字都不同，但碰撞的是同一处
+      const at = r => `${Math.round((r.x0 + r.x1) / 80)},${Math.round((r.y0 + r.y1) / 80)}`, key = `${sc.name}|${at(p)}|${at(q)}`;
+      if (share < OVERLAP_SHARE || scanSeen.has(key)) continue;
+      scanSeen.add(key);
+      issues.push({ kind: 'text-overlap', scene: sc.name, at: +T.toFixed(2), text: `${p.text} / ${q.text}`, share: +share.toFixed(2) });
     }
     track = null;
   }
