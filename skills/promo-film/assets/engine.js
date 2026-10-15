@@ -330,7 +330,9 @@ const POLY = (() => {
 })();
 // 线框多面体：近处的棱更亮更粗，顶点带光点
 function wire(shape, cam = {}, o = {}) {
-  const sc = o.scale ?? 1, pts = shape.vertices.map(v => project(v.map(c => c * sc), cam)), a = o.alpha ?? 1, color = o.color || '#bfe3ff';
+  const sc = o.scale ?? 1;
+  if (!(sc > 0)) return [];                                     // 缩放为 0 时（常见于从无到有地长出来）什么都不画
+  const pts = shape.vertices.map(v => project(v.map(c => c * sc), cam)), a = o.alpha ?? 1, color = o.color || '#bfe3ff';
   const near = p => clamp(.5 - p.z / (2 * sc)), k0 = (cam.f ?? Math.min(W, H) * .9) / (cam.dist ?? 6);
   ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = color; ctx.lineCap = 'round';
   for (const [i, j] of shape.edges) {
@@ -597,7 +599,12 @@ function drawLayer(sc, T, withBackdrop, jitter = [0, 0]) {
   ctx.rotate(cam.r || 0); ctx.scale(cam.z, cam.z); ctx.translate(-W / 2, -H / 2);
   ctx.save();
   try { sc.draw(lt, sc.d, T); }
-  catch (e) { e.message = `${sc.name} at ${lt.toFixed(2)}s (film ${T.toFixed(2)}s): ${e.message}`; throw e; }
+  catch (e) {
+    // DOMException 的 message 只读，所以新建一个错误，并带上原来指向 film.js 的栈帧
+    const err = new Error(`${sc.name} at ${lt.toFixed(2)}s (film ${T.toFixed(2)}s): ${e && e.name !== 'Error' ? e.name + ': ' : ''}${e && e.message || e}`);
+    err.stack = err.message + '\n' + String(e && e.stack || '').split('\n').filter(l => /^\s*at /.test(l)).join('\n');
+    throw err;
+  }
   finally { ctx.restore(); }
 }
 const JITTER = [[0, 0], [.25, -.25], [-.25, .25], [.375, .125], [-.125, -.375], [.125, .375], [-.375, -.125], [0, .5]];
