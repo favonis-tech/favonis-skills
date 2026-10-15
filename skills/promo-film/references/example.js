@@ -20,7 +20,7 @@ scene({
   name: 'cold-open', bars: 4, letterbox: true, camera: 'still', fade: [0, .5],
   music: { chords: ['Dm', 'Bb', 'F', 'C'], energy: 1 },
   sfx: [[0, 'heart'], [BEAT, 'heart'], ...FLASH.map((_, i) => [2 * BEAT + i * EIGHTH, 'hit', { gain: .45 + i * .06 }]),
-    [6 * BEAT - .45, 'reverse', { dur: .45 }], [6 * BEAT + .2, 'swell', { dur: 1.6 }], [4 * BAR - 2, 'riser', { dur: 2 }]],
+    [6 * BEAT, 'reverse', { dur: .45 }], [8 * BEAT, 'swell', { dur: 1.6 }]],
   draw(t, d) {
     if (t < 2 * BEAT) {
       const p = Math.exp(-(t % BEAT) * 5);
@@ -33,7 +33,8 @@ scene({
       ctx.fillStyle = `rgba(255,255,255,${.5 * Math.exp(-f * 18)})`; ctx.fillRect(0, 0, W, H);
       return;
     }
-    const a = fade(t, 6 * BEAT + .2, d, .5, .6), b = fade(t, 6 * BEAT + 1.6, d, .5, .6);
+    const a = fade(t, 6 * BEAT + .2, d, .5, .6), b = fade(t, 8 * BEAT, d, .5, .6);
+    stars(t, { count: 160, speed: 5, alpha: .7 * a });
     text('它照亮一切，却从不被看见——', W / 2, H / 2 - 70, { size: 54, weight: 700, ls: 6, color: INK, alpha: a });
     text('It lights up everything, yet is never seen—', W / 2, H / 2 - 8, { font: FONT.italic, style: 'italic', weight: 500, size: 30, color: SOFT, alpha: a });
     text('什么是光？', W / 2, H / 2 + 100, { size: 88, weight: 900, ls: 12, alpha: b, glow: rgba('#ffd28c', .5), blur: 30 });
@@ -46,7 +47,7 @@ scene({
   name: 'title', bars: 3, hits: [[0, 1]],
   backdrop: t => ({ kind: 'nebula', tint: '#b8742a', tint2: '#3a2a8f', amount: .9 * smooth(0, 2, t) }),
   music: { chords: ['Dm', 'Bb', 'F', 'C'], energy: 2 },
-  sfx: [[.2, 'sparkle', { dur: 2.2 }], [2.3, 'chime', { note: 'D6' }]],
+  sfx: [[0, 'riser', { dur: 2 }], [.2, 'sparkle', { dur: 2.2 }], [2.3, 'chime', { note: 'D6' }]],
   draw(t, d) {
     const y = H / 2 - 40, pts = textPoints('光', { size: 420 });
     assemble(pts, t, { y, dur: 1.8, stagger: .6, color: '#ffe7b0', alpha: 1 - smooth(2.4, 3.2, t) });

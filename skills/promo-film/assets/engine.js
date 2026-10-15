@@ -25,7 +25,7 @@ const FONT = {
   display: '"Cinzel", "Noto Serif CJK SC", serif',
   italic: '"Cormorant Garamond", "Noto Serif CJK SC", serif',
   math: '"STIX Two Text", "Noto Serif CJK SC", serif',
-  mono: '"Noto Sans Mono", "Menlo", "Consolas", monospace',
+  mono: '"Noto Sans Mono", "Noto Sans CJK SC", "Menlo", "Consolas", monospace',
 };
 const PARAMS = new URLSearchParams(location.search);
 const EXPORT = PARAMS.has('export');
@@ -707,25 +707,42 @@ function info() {
     cues: cues(),
   };
 }
-// 在给定时刻只画图层（不做后期），记录越界文字和压住字幕的文字
+// check 用：在给定时刻只画图层（不含背景、后期和叠加层），记录越界或压住字幕的文字，
+// 并给出与上一个采样相比变化了的像素比例，用来找长时间不动的画面。
+const SIG = document.createElement('canvas');
+SIG.width = 96; SIG.height = 54;
+const sigctx = SIG.getContext('2d', { willReadFrequently: true });
+const scanSeen = new Set();
+let lastSig = null, lastScene = null;
+function signature() {
+  sigctx.drawImage(layer, 0, 0, SIG.width, SIG.height);
+  const d = sigctx.getImageData(0, 0, SIG.width, SIG.height).data, out = new Uint8Array(SIG.width * SIG.height);
+  for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 54 + d[i * 4 + 1] * 183 + d[i * 4 + 2] * 19) >> 8;
+  return out;
+}
 function scan(times) {
-  const issues = [], seen = new Set(), u = Math.min(W, H) / 1080;
+  const issues = [], motion = [], u = Math.min(W, H) / 1080;
   for (const T of times) {
     const sc = sceneAt(T);
     track = [];
     drawLayer(sc, T, false);
+    const sig = signature();
+    let changed = null;
+    if (lastSig && lastScene === sc) { changed = 0; for (let i = 0; i < sig.length; i++) if (Math.abs(sig[i] - lastSig[i]) > 6) changed++; changed /= sig.length; }
+    motion.push(changed);
+    lastSig = sig; lastScene = sc;
     const subOn = SUBS.some(sb => T >= sb.start && T <= sb.end), band = H - (SUBS.length ? 150 * u : 0);
     for (const b of track) {
       const key = `${sc.name}|${b.text}`;
-      if (seen.has(key)) continue;
+      if (scanSeen.has(key)) continue;
       const out = b.x0 < -2 || b.x1 > W + 2 || b.y0 < -2 || b.y1 > H + 2;
       const edge = b.x0 < W * .03 || b.x1 > W * .97 || b.y0 < H * .03 || b.y1 > H * .97;
-      if (out || edge) { seen.add(key); issues.push({ kind: out ? 'clipped' : 'edge', scene: sc.name, at: +T.toFixed(2), text: b.text, box: [b.x0, b.y0, b.x1, b.y1].map(Math.round) }); }
-      else if (subOn && b.y1 > band) { seen.add(key); issues.push({ kind: 'under-subtitle', scene: sc.name, at: +T.toFixed(2), text: b.text, box: [b.x0, b.y0, b.x1, b.y1].map(Math.round) }); }
+      if (out || edge) { scanSeen.add(key); issues.push({ kind: out ? 'clipped' : 'edge', scene: sc.name, at: +T.toFixed(2), text: b.text, box: [b.x0, b.y0, b.x1, b.y1].map(Math.round) }); }
+      else if (subOn && b.y1 > band) { scanSeen.add(key); issues.push({ kind: 'under-subtitle', scene: sc.name, at: +T.toFixed(2), text: b.text, box: [b.x0, b.y0, b.x1, b.y1].map(Math.round) }); }
     }
     track = null;
   }
-  return issues;
+  return { issues, motion };
 }
 const posterTime = () => clamp(FILM.poster ?? (SCENES[1] ? SCENES[1].t0 + SCENES[1].d * .6 : DURATION * .3), 0, DURATION - .01);
 

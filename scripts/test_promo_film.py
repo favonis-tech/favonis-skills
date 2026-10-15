@@ -33,6 +33,20 @@ scene({
 """
 
 
+CHECKS_FILM = """film({ title: 'Checks', bpm: 120, tail: 1 });
+scene({
+  name: 'hold', bars: 2, camera: 'still',
+  sfx: [[1.3, 'riser', { dur: 1 }]],
+  draw(t, d) { text('不动的标题', W / 2, H / 2, { size: 80, alpha: fade(t, 0, 99, .3, .1) }); },
+});
+scene({
+  name: 'moving', bars: 2, camera: 'still', hits: [[0, 1]],
+  sfx: [[0, 'boom'], [0, 'swell', { dur: 2 }]],
+  draw(t, d) { glow(W * (.2 + .15 * t), H / 2, 120, '#88ccff', 1); },
+});
+"""
+
+
 def run_script(cwd, *args, timeout=300):
     # 缓存（字体子集、渲染分段）放进用例自己的临时目录，避免用例之间互相复用
     return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd, capture_output=True, text=True, timeout=timeout,
@@ -98,6 +112,15 @@ class BrowserTests(unittest.TestCase):
             self.assertIn(("under-subtitle", "压住字幕"), issues)
             self.assertEqual(report["sheet_times"], [0.5, 2.5])
             self.assertTrue(Path(directory, "review/sheet.png").stat().st_size)
+
+    def test_check_reports_static_pictures_and_misplaced_sounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "film.js").write_text(CHECKS_FILM)
+            report = json.loads(run_script(directory, "check", "film.js").stdout)
+            found = {(i["kind"], i["scene"]) for i in report["issues"]}
+            self.assertEqual(found, {("static", "hold"), ("lead-in-off-beat", "hold"), ("double-impact", "moving")})
+            static = next(i for i in report["issues"] if i["kind"] == "static")
+            self.assertGreaterEqual(static["seconds"], 3)
 
     def test_errors_point_at_the_film(self):
         with tempfile.TemporaryDirectory() as directory:

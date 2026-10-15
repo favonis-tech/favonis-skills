@@ -43,6 +43,9 @@ SYSTEM_FONTS = [
 EXTRA_CHARS = "–—‘’“”…·•°×÷±→←↑↓∞√∑∏∫≈≠≤≥①②③④⑤"
 BROWSER_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
                 "--ignore-gpu-blocklist", "--mute-audio", "--allow-file-access-from-files", "--hide-scrollbars"]
+LEAD_INS = ("riser", "reverse", "swell")
+STATIC_CHANGE = 0.0005   # 半秒内变化的像素占比低于它，视为画面没动（镜头漂移约 0.2%，打出一个字约 0.1%）
+STATIC_SECONDS = 3.0
 AUDIO_MIME = {".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".aac": "audio/aac", ".ogg": "audio/ogg", ".opus": "audio/ogg"}
 
 
@@ -256,6 +259,42 @@ def subtitle_issues(info):
     return issues
 
 
+def scene_at(info, t):
+    return max((s for s in info["scenes"] if s["start"] <= t), key=lambda s: s["start"])["name"]
+
+
+def static_issues(info, times, motion):
+    """连续采样之间几乎没有像素变化、且累计超过 STATIC_SECONDS 的片段。"""
+    issues, run = [], []
+    step = times[1] - times[0] if len(times) > 1 else 0.5
+    for t, changed in [*zip(times, motion), (None, None)]:
+        if changed is not None and changed < STATIC_CHANGE:
+            run.append(t)
+            continue
+        if len(run) * step >= STATIC_SECONDS:
+            start = run[0] - step
+            issues.append({"kind": "static", "scene": scene_at(info, start), "at": round(start, 2), "seconds": round(len(run) * step, 1)})
+        run = []
+    return issues
+
+
+def sound_issues(info):
+    """重拍上又叠撞击声；铺垫音效（落点在 t）没有落在场景开头、重拍、字幕、其他音效或拍点上。"""
+    beat = 60 / info["bpm"]
+    hits = [t for s in info["scenes"] for t, _ in s["hits"]]
+    marks = [s["start"] for s in info["scenes"]] + hits + [sub["start"] for sub in info["subs"]] \
+        + [c["t"] for c in info["cues"] if c["name"] not in LEAD_INS]
+    issues = []
+    for c in info["cues"]:
+        where = {"scene": c["scene"], "at": round(c["t"], 2), "sound": c["name"]}
+        if c["name"] in ("boom", "hit") and any(abs(c["t"] - h) < 0.1 for h in hits):
+            issues.append({"kind": "double-impact", **where})
+        elif c["name"] in LEAD_INS and not any(abs(c["t"] - m) < 0.15 for m in marks) \
+                and abs(c["t"] - round(c["t"] / beat) * beat) > 0.08:
+            issues.append({"kind": "lead-in-off-beat", **where})
+    return issues
+
+
 def sheet_times(info, frames, at):
     if at:
         return [min(max(0.0, float(t)), info["duration"] - 0.01) for t in at.split(",")]
@@ -263,29 +302,30 @@ def sheet_times(info, frames, at):
         n = max(1, frames)
         return [round(info["duration"] * (k + 0.5) / n, 2) for k in range(n)]
     scenes = info["scenes"]
-    if len(scenes) > 16:
-        scenes = [scenes[round(k * (len(scenes) - 1) / 15)] for k in range(16)]
+    if len(scenes) > 8:
+        scenes = [scenes[round(k * (len(scenes) - 1) / 7)] for k in range(8)]
     return [round(s["start"] + (s["end"] - s["start"]) * 0.6, 2) for s in scenes]
 
 
 def contact_sheet(images, times, info, path):
-    """横排 4 列拼图，每格下方标注时间与场景序号，供逐格检查。"""
+    """两列拼图，每格保持草稿帧原尺寸（960 宽）以便看清细节，格下标注时间与场景序号。"""
     from PIL import Image, ImageDraw
 
     tiles = [Image.open(io.BytesIO(data)).convert("RGB") for data in images]
-    width = 480 if len(tiles) > 1 else tiles[0].width
-    tiles = [t.resize((width, round(t.height * width / t.width))) for t in tiles]
-    columns = min(4, len(tiles))
+    width = tiles[0].width
+    columns = min(2, len(tiles))
     rows = math.ceil(len(tiles) / columns)
     th, label, pad = tiles[0].height, 22, 8
     sheet = Image.new("RGB", (columns * (width + pad) + pad, rows * (th + label + pad) + pad), "white")
     draw = ImageDraw.Draw(sheet)
-    names = [s["name"] for s in info["scenes"]]
     for i, (tile, t) in enumerate(zip(tiles, times)):
         x, y = pad + (i % columns) * (width + pad), pad + (i // columns) * (th + label + pad)
         sheet.paste(tile, (x, y))
-        scene = max((k for k, s in enumerate(info["scenes"]) if s["start"] <= t), default=0)
-        draw.text((x + 2, y + th + 5), f"{t:.2f}s  scene {scene + 1}/{len(names)}", fill="black")
+        k = max((k for k, s in enumerate(info["scenes"]) if s["start"] <= t), default=0)
+        name = info["scenes"][k]["name"]
+        # 默认字体只有拉丁字符，场景名不是 ASCII 时只标序号
+        name = name if name.isascii() else ""
+        draw.text((x + 2, y + th + 5), f"{t:.2f}s  scene {k + 1}/{len(info['scenes'])} {name}", fill="black")
     path.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(path)
 
@@ -298,8 +338,12 @@ def command_check(args):
         info = page.info
         issues = subtitle_issues(info)
         times = [round(k * 0.5, 2) for k in range(int(info["duration"] / 0.5) + 1) if k * 0.5 < info["duration"]]
+        motion = []
         for i in range(0, len(times), 40):
-            issues += page.call("times => PROMO.scan(times)", times[i:i + 40])
+            scanned = page.call("times => PROMO.scan(times)", times[i:i + 40])
+            issues += scanned["issues"]
+            motion += scanned["motion"]
+        issues += static_issues(info, times, motion) + sound_issues(info)
         report = {
             "ok": True, "duration": round(info["duration"], 2), "size": info["size"], "bpm": info["bpm"], "webgl": info["webgl"],
             "scenes": [{"name": s["name"], "start": round(s["start"], 2), "end": round(s["end"], 2)} for s in info["scenes"]],
@@ -472,7 +516,7 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     check = sub.add_parser("check", help="Load the film, report errors and layout issues, optionally write a contact sheet")
     check.add_argument("film")
-    check.add_argument("--sheet", type=Path, help="Contact sheet PNG; default one frame per scene")
+    check.add_argument("--sheet", type=Path, help="Contact sheet PNG in two columns; default one frame per scene, up to 8")
     check.add_argument("--frames", type=int, help="Evenly spaced frames instead of one per scene")
     check.add_argument("--at", help="Comma-separated film times in seconds")
     timeline = sub.add_parser("timeline", help="Export the music timeline JSON for the cue-score skill")

@@ -29,43 +29,43 @@ localizations:
 
 # Promo film
 
-Write the film as one JavaScript file for the bundled engine, check it in the sandbox, add a score, then deliver a self-contained HTML player and, when asked, an MP4.
+Write the film as one JavaScript file for the bundled engine, check and review it in the sandbox, add a score, then deliver a self-contained HTML player with the music embedded.
 
 ## Environment
 
-- The package directory is the `sandbox_path` returned by `skill_read` (normally `/skills/promo-film`) and is read-only. Before writing the first film in a conversation, read [references/authoring.md](references/authoring.md) and [references/example.js](references/example.js). Read [scripts/promo.py](scripts/promo.py) once before running it.
+- The package directory is the `sandbox_path` returned by `skill_read` (normally `/skills/promo-film`) and is read-only. Before writing the first film in a conversation, read [references/api.md](references/api.md), [references/craft.md](references/craft.md) and [references/example.js](references/example.js); the commands below are all you need from the script.
 - Use the `shell` tool in `/project` and run the script with an explicit interpreter: `python /skills/promo-film/scripts/promo.py`. Paths passed to the script and to `present_files` are project-relative; caches stay under `/tmp/promo-film`.
 - The sandbox renders with Chromium's software WebGL; no GPU or display is needed and nothing has to be installed. If the script reports that Chromium, Playwright or fontTools is missing, the sandbox was created from an older image: tell the user and stop.
 
 ## Workflow
 
-1. **Brief.** Settle the subject, audience, length, aspect ratio, on-screen language and the sound. Defaults: 16:9, 45–75 seconds, Chinese on screen with English secondary subtitle lines for a cinematic feel (or the user's language only), a synthesized score. Ask only when a missing decision changes the film.
-2. **Storyboard.** Write a short table of scenes: name, bars, what appears and moves, the subtitle, the sound. Pick the tempo first; a bar lasts `240 / bpm` seconds. Follow the structure and pacing in authoring.md.
+1. **Brief.** Start working without asking questions. Defaults: 16:9, 45–75 seconds, on-screen text and subtitles in the user's language with English secondary lines for a cinematic feel, a synthesized score, delivered as the HTML player. Ask only when the subject itself is unclear; never ask whether to render an MP4.
+2. **Storyboard.** Write a short table of scenes: name, bars, what appears and moves, the subtitle, the sound. Pick the tempo first; a bar lasts `240 / bpm` seconds. Follow craft.md: every scene shows what its subtitles say and keeps moving.
 3. **Write** `promo/<slug>/film.js`, one `scene()` per row of the storyboard.
 4. **Check** and review a contact sheet:
 
    ```bash
-   python /skills/promo-film/scripts/promo.py check promo/light/film.js --sheet /tmp/promo-review/light.png
+   python /skills/promo-film/scripts/promo.py check promo/light/film.js --sheet review/light.png
    ```
 
-   On `"ok": false`, fix the error it names (scene, time and `film.js` line) and run it again. Resolve every entry in `issues`. The sheet shows one frame per scene by default; `--frames 12` spaces frames evenly and `--at 3.5,12.2` picks moments, for example the middle of an animation. To see the sheet, copy it into a temporary project review folder, open it with `project_read`, then delete that copy. Look for overlapping or crowded elements, unreadable text, empty frames and leftovers from earlier beats. If you cannot view images, say that the visual check was not performed.
+   On `"ok": false`, fix the error it names (scene, time and `film.js` line) and run it again. Resolve every entry in `issues`. Open the sheet with `project_read` and work through the review list in craft.md: it shows one frame per scene (up to 8) in two columns; `--at 3.5,12.2` picks moments, and a single moment comes out full size for a closer look. Delete the `review` folder with `project_delete` before delivering. If you cannot view images, say that the visual check was not performed.
 5. **Sound.** Choose one:
-   - A synthesized, cue-synced score when the `cue-score` skill is available: export the timeline, then read that skill and follow it to write `promo/<slug>/score.mp3`.
+   - A synthesized, cue-synced score when the `cue-score` skill is available: export the timeline, then read that skill and follow it to write `promo/<slug>/score.mp3`. If its report has `warnings`, such as a key change, fix the chords in `film.js` and regenerate.
 
      ```bash
      python /skills/promo-film/scripts/promo.py timeline promo/light/film.js --out promo/light/timeline.json
      ```
 
    - A track the user provides, or music from the platform's audio tool. Generated music is not synchronized with the cuts: ask for the film's tempo in the prompt and keep hits on bar boundaries.
-   - No sound: skip `--audio` below.
+   - No sound, only when the user asks for it: skip `--audio` below.
 6. **Build** the player and deliver it:
 
    ```bash
    python /skills/promo-film/scripts/promo.py build promo/light/film.js --audio promo/light/score.mp3 --out outputs/光.html
    ```
 
-   The HTML embeds the engine, the film, font subsets and the audio, so it plays offline and in the project preview. Call `present_files` with the HTML and `film.js`. Mention any `warnings`, such as an audio track that is shorter or longer than the film.
-7. **Render an MP4** only when the user wants a video file (to upload, share or edit):
+   The HTML embeds the engine, the film, font subsets and the audio, so it plays offline and in the project preview. Call `present_files` with the HTML only; `film.js`, the timeline and the score stay in the project for later edits but are not deliverables. Mention any `warnings`, such as an audio track that is shorter or longer than the film.
+7. **Render an MP4** only when the user explicitly asks for a video file:
 
    ```bash
    python /skills/promo-film/scripts/promo.py render promo/light/film.js --audio promo/light/score.mp3 --out outputs/光.mp4
@@ -75,4 +75,4 @@ Write the film as one JavaScript file for the bundled engine, check it in the sa
 
 ## Revision
 
-Edit `film.js`, run `check` again, and rebuild to the same output path; the project keeps earlier versions in its history. Change only the scenes the user commented on. When scene lengths, `music`, `hits` or `sfx` change, export the timeline and regenerate the score before building. Re-render the MP4 only if the user still wants one. Keep `film.js`, `timeline.json` and the score in the project so the film can be edited later.
+Edit `film.js`, run `check` again, and rebuild to the same output path; the project keeps earlier versions in its history. Change only the scenes the user commented on. When scene lengths, `music`, `hits` or `sfx` change, export the timeline and regenerate the score before building. Re-render the MP4 only if the user still wants one. Deliver only the rebuilt HTML (or MP4).
