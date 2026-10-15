@@ -5,6 +5,7 @@
 ## Structure and rhythm
 
 - **Structure.** A cold open that poses a question or flashes through the film in 2–4 bars; the title in 2–3 bars; three to five chapters of 3–4 bars, each with one idea and one image; a finale that returns to the title and lands the last line. 45–75 seconds is the sweet spot; split anything over two minutes into several films.
+- **Your own film.** example.js shows how the engine is used; the storyboard, images and words come from the user's subject. Do not reuse its scenes or lines, even when the subject is the same.
 - **Rhythm.** Cut and reveal on bar or beat boundaries (`BAR`, `BEAT`, `BEAT / 2`). Put hits on scene starts that reveal something. Raise `energy` across the film (1 intro, 2 build, 3 drive, 4 climax), drop it for a breath before the finale, and keep the finale at 4 or let it resolve at 2–3.
 
 ## Motion
@@ -16,6 +17,8 @@
 ## Layout
 
 - **Screen text.** One line of large text per moment. At 1080p: titles 120–420, headlines 54–88, body 36–48, small caps 16–34 with generous `ls`; nothing under 24. Keep text inside the middle 94 % of the frame and above the subtitle band (the bottom 150 px) while subtitles show; `check` reports violations.
+- **Narration lives in the subtitles.** While subtitles run, on-screen text is a title, a label, a number or a formula, not a sentence: a sentence competes with them, and placed just above them it reads as part of them. A sentence card, such as the opening question or the last line, belongs in a scene without subtitles.
+- **Effects clear before text arrives.** When particles, glows or lines gather where text will sit, fade or scatter them (`assemble(..., { reverse: true })`) before the text fades in. Leftovers on top of text look like a rendering fault.
 - **Shapes around text** (boxes, pills, chips) take their width from `measure(str, o)` plus padding. A fixed width sized for one character clips two-character labels.
 - **Links between items** (attention, networks, relations): place the items on a ring, an arc or two rows, or draw curved links with `quadraticCurveTo` and a control point above the row. Straight lines between points on one row lie on top of each other and read as a single line.
 - **Labels over particles or lines** are drawn last, with a dark glow (`glow: 'rgba(0,0,0,.9)', blur: 12`), and placed clear of dense points.
@@ -32,7 +35,7 @@
 
 Run `check` with a contact sheet and go through this list before building:
 
-1. For every frame of the sheet (one per scene, taken at 60 % of the scene), write down what is on screen, whether it shows what that scene's subtitles say, and whether every label sits fully inside its shape and is not covered by another element.
+1. For every frame of the sheet (one per scene, taken at 60 % of the scene), write down what is on screen, whether it shows what that scene's subtitles say, and whether every label sits fully inside its shape and is not covered by another element or by leftover particles, glows or lines, and whether an on-screen sentence shows together with a subtitle.
 2. For every scene whose subtitles describe a change, open one early and one late frame with `--at` (a single frame comes out full size) and confirm the change happens between them.
 3. Fix what you found and every `issues` entry, run `check` again, and look again at the scenes you changed.
 

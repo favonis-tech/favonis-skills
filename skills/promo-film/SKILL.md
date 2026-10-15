@@ -41,7 +41,7 @@ Write the film as one JavaScript file for the bundled engine, check and review i
 
 1. **Brief.** Start working without asking questions. Defaults: 16:9, 45–75 seconds, on-screen text and subtitles in the user's language with English secondary lines for a cinematic feel, a synthesized score, delivered as the HTML player. Ask only when the subject itself is unclear; never ask whether to render an MP4.
 2. **Storyboard.** Write a short table of scenes: name, bars, what appears and moves, the subtitle, the sound. Pick the tempo first; a bar lasts `240 / bpm` seconds. Follow craft.md: every scene shows what its subtitles say and keeps moving.
-3. **Write** `promo/<slug>/film.js`, one `scene()` per row of the storyboard.
+3. **Write** `promo/<slug>/film.js`, one `scene()` per row of the storyboard. example.js teaches technique only: build the storyboard, the on-screen copy, the subtitles and the closing line from the user's subject, and do not reuse the example's scenes or lines, even when the subject is the same.
 4. **Check** and review a contact sheet:
 
    ```bash
@@ -64,7 +64,7 @@ Write the film as one JavaScript file for the bundled engine, check and review i
    python /skills/promo-film/scripts/promo.py build promo/light/film.js --audio promo/light/score.mp3 --out outputs/光.html
    ```
 
-   The HTML embeds the engine, the film, font subsets and the audio, so it plays offline and in the project preview. Call `present_files` with the HTML only; `film.js`, the timeline and the score stay in the project for later edits but are not deliverables. Mention any `warnings`, such as an audio track that is shorter or longer than the film.
+   The HTML embeds the engine, the film, font subsets and the audio, so it plays offline and in the project preview. Call `present_files` with the HTML only; `film.js`, the timeline and the score stay in the project for later edits but are not deliverables. Close with one or two sentences: the title, its length, what it covers, any `warnings` (such as an audio track shorter or longer than the film) and any check you could not perform. Do not list files or paths, add a scene table, or offer an MP4.
 7. **Render an MP4** only when the user explicitly asks for a video file:
 
    ```bash
