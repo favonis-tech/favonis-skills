@@ -26,4 +26,4 @@ localizations:
 python -m unittest discover -s scripts
 ```
 
-需要渲染的用例按依赖自动跳过：Manim 渲染要有 Manim 和 FFmpeg；公文的版面实测要有沙箱的 `render-office`，本机可以在 `PATH` 里放一个同名脚本，用能显示中文字体的 LibreOffice 渲染。宣传片的浏览器用例要有 Playwright、fontTools、Pillow、FFmpeg 和 Chromium（`PATH` 里的 `chromium`，或用 `PROMO_CHROMIUM` 指定可执行文件）；中文字体通过 `fc-match` 查找，本机没有 fontconfig 时可以放一个同名脚本返回 Noto CJK 字体路径。
+需要渲染的用例按依赖自动跳过：Manim 渲染要有 Manim 和 FFmpeg；公文的版面实测要有沙箱的 `render-office`，本机可以在 `PATH` 里放一个同名脚本，用能显示中文字体的 LibreOffice 渲染。动画短片的浏览器用例要有 Playwright、fontTools、Pillow、FFmpeg 和 Chromium（`PATH` 里的 `chromium`，或用 `PROMO_CHROMIUM` 指定可执行文件）；中文字体通过 `fc-match` 查找，本机没有 fontconfig 时可以放一个同名脚本返回 Noto CJK 字体路径。

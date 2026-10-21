@@ -5,8 +5,8 @@ description: >-
   Synthesize an instrumental score with sound effects from a timeline JSON so that every hit, cut
   and effect lands on its exact second: chords and energy per section, impacts, risers, whooshes,
   heartbeats and chimes, mixed and normalized to streaming loudness. Use for music that must follow
-  a known edit: promo films from the promo-film skill, Manim animations, slide or screen-recording
-  videos with known shot times, or a cue list the user describes. Not for songs, lyrics, a named
+  a known edit: Manim animations, slide or screen-recording videos with known shot times, or a cue
+  list the user describes. Not for songs, lyrics, a named
   genre or realistic instruments without exact sync; use the audio skill's music generation for those.
 localizations:
   zh-CN:
@@ -84,26 +84,24 @@ Chords: roots `A`–`G` with `#` or `b`, qualities `m`, `5`, `sus2`, `sus4`, `di
 
 ## Writing a timeline by hand
 
-For a video that already exists (a Manim render, a screen recording, an edited clip), take the shot boundaries and important moments from its source or from `ffprobe` and scene timings, then:
+For a video (a Manim render, a screen recording, an edited clip), take the shot boundaries and important moments from its source or from `ffprobe` and scene timings, then:
 
 - Choose a tempo whose bars fit the shots; 90 BPM gives 2.667-second bars, 120 BPM 2-second bars. Section boundaries need not fall on bars, but music sounds tighter when they do.
 - Shape energy over the piece: start at 1, build to 3–4 at the main reveal, dip before the last section. Use 0 for silence before a big hit.
 - Keep the piece in one key and vary the loop between sections. Loops that work: minor epic `Dm Bb F C` or `Am F C G`; tension `Dm Bb Gm A`; bright `C G Am F` or `F C G Am`; tech `Fm Db Ab Eb` with `electronic`. The report warns when neighbouring sections share no key.
 - Put `hits` on reveals and hard cuts and land `riser`, `reverse` or `swell` on them (same `t`); never add a `boom` or `hit` cue on a hit, which already sounds. Use `whoosh` on fast camera moves, `tick` on counters, `chime` or `sparkle` on small reveals. Do not stack more than two effects on the same moment.
 
-From the promo-film skill, export the timeline with `promo.py timeline` instead of writing it.
-
 ## Workflow
 
-1. Write or export the timeline, for example `promo/abyss/timeline.json`.
+1. Write the timeline, for example `audio/timeline.json`.
 2. Run the script:
 
    ```bash
-   python /skills/cue-score/scripts/score.py promo/abyss/timeline.json --out promo/abyss/score.mp3
+   python /skills/cue-score/scripts/score.py audio/timeline.json --out audio/score.mp3
    ```
 
    On `"ok": false`, `error` lists every invalid field with its section or cue index; fix them and run it again. `warnings` point out key changes between sections; change the chords unless the user asked for a modulation. For a different arrangement of the same timeline, pass another `--seed`.
-3. Use the audio: pass it to promo-film's `build` or `render` with `--audio`, or mux it into another video:
+3. Use the audio: pass it to promo-film's `build` or `render` with `--audio` (and set `music: false` in that film), or mux it into another video:
 
    ```bash
    ffmpeg -i outputs/scene.mp4 -i audio/score.mp3 -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -shortest outputs/scene-with-music.mp4

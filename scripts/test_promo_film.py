@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -16,9 +17,9 @@ spec.loader.exec_module(promo)
 CHROMIUM = os.environ.get("PROMO_CHROMIUM") or shutil.which("chromium") or shutil.which("chromium-browser")
 HAS_BROWSER = bool(CHROMIUM and shutil.which("ffmpeg") and all(importlib.util.find_spec(m) for m in ("playwright", "fontTools", "PIL")))
 
-FILM = """film({ title: 'Test', bpm: 120, tail: 1 });
+FILM = """film({ title: 'Test', tail: 1, voices: { 甲: { tone: 'square', cps: 10 } } });
 scene({
-  name: 'one', bars: 1, camera: 'still',
+  name: 'one', dur: 2,
   subs: [[0.2, 1.8, '第一句字幕']],
   draw(t, d) {
     text('出界的标题', W - 40, H / 2, { size: 120 });
@@ -28,22 +29,24 @@ scene({
   },
 });
 scene({
-  name: 'two', bars: 1, hits: [[0, 0.5]],
+  name: 'two', dur: 2,
+  say: [[0.2, '甲', '你好']],
   sfx: [[1, 'chime']],
-  draw(t, d) { glow(W / 2, H / 2, 200, '#ffd28c', fade(t, 0, d)); },
+  draw(t, d, T) {
+    glow(W / 2, H / 2, 200, '#ffd28c', fade(t, 0, d));
+    for (const l of dialogue(T)) bubble(l.full, W / 2, H * .4, { upto: l.shown });
+  },
 });
 """
 
 
-CHECKS_FILM = """film({ title: 'Checks', bpm: 120, tail: 1 });
+CHECKS_FILM = """film({ title: 'Checks', tail: 1 });
 scene({
-  name: 'hold', bars: 2, camera: 'still',
-  sfx: [[1.3, 'riser', { dur: 1 }]],
+  name: 'hold', dur: 4,
   draw(t, d) { text('不动的标题', W / 2, H / 2, { size: 80, alpha: fade(t, 0, 99, .3, .1) }); },
 });
 scene({
-  name: 'moving', bars: 2, camera: 'still', hits: [[0, 1]],
-  sfx: [[0, 'boom'], [0, 'swell', { dur: 2 }]],
+  name: 'moving', dur: 4,
   draw(t, d) { glow(W * (.2 + .15 * t), H / 2, 120, '#88ccff', 1); },
 });
 """
@@ -55,30 +58,13 @@ def run_script(cwd, *args, timeout=300):
                           env={**os.environ, "TMPDIR": str(cwd)})
 
 
-class TimelineTests(unittest.TestCase):
-    def info(self, music):
-        return {
-            "duration": 9.0, "bpm": 90, "music": music,
-            "scenes": [
-                {"name": "a", "start": 0, "end": 4, "music": {"chords": ["Dm"], "energy": 1}, "hits": []},
-                {"name": "b", "start": 4, "end": 8, "music": None, "hits": [[4, 0.8]]},
-            ],
-            "cues": [{"t": 1.0, "name": "tick", "scene": "a"}],
-        }
+def max_volume(path):
+    run = subprocess.run(["ffmpeg", "-v", "info", "-i", str(path), "-vn", "-af", "volumedetect", "-f", "null", "-"],
+                         capture_output=True, text=True)
+    return float(re.search(r"max_volume: (-?[\d.]+|-inf) dB", run.stderr).group(1).replace("-inf", "-999"))
 
-    def test_scenes_without_music_continue_the_previous_one(self):
-        timeline = promo.timeline_of(self.info({"style": "electronic"}))
-        self.assertEqual(timeline["style"], "electronic")
-        self.assertEqual([s["energy"] for s in timeline["sections"]], [1, 1])
-        self.assertEqual(timeline["sections"][1]["chords"], ["Dm"])
-        self.assertEqual(timeline["hits"], [{"t": 4, "k": 0.8}])
-        self.assertEqual(timeline["cues"], [{"t": 1.0, "name": "tick"}])
 
-    def test_disabled_music_keeps_only_effects(self):
-        timeline = promo.timeline_of(self.info(False))
-        self.assertEqual({(s["energy"], tuple(s["chords"])) for s in timeline["sections"]}, {(0, ())})
-        self.assertEqual(len(timeline["cues"]), 1)
-
+class ReportTests(unittest.TestCase):
     def test_default_frames_follow_the_subtitles(self):
         info = {"duration": 9.0, "subs": [{"start": 1, "end": 3, "scene": "a"}, {"start": 3.5, "end": 4.5, "scene": "a"}],
                 "scenes": [{"name": "a", "start": 0, "end": 5}, {"name": "b", "start": 5, "end": 8}]}
@@ -114,6 +100,7 @@ class BrowserTests(unittest.TestCase):
             report = json.loads(result.stdout)
             self.assertEqual([s["name"] for s in report["scenes"]], ["one", "two"])
             self.assertAlmostEqual(report["duration"], 5.0, places=2)
+            self.assertEqual((report["lines"], report["sounds"], report["music"]), (1, 1, False))
             issues = {(i["kind"], i["text"]) for i in report["issues"]}
             self.assertIn(("clipped", "出界的标题"), issues)
             self.assertIn(("under-subtitle", "压住字幕"), issues)
@@ -126,14 +113,12 @@ class BrowserTests(unittest.TestCase):
             self.assertEqual(report["sheets"], ["review/many-1.png", "review/many-2.png"])
             self.assertTrue(all(Path(directory, p).stat().st_size for p in report["sheets"]))
 
-    def test_check_reports_static_pictures_and_misplaced_sounds(self):
+    def test_check_reports_static_pictures(self):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "film.js").write_text(CHECKS_FILM)
             report = json.loads(run_script(directory, "check", "film.js").stdout)
-            found = {(i["kind"], i["scene"]) for i in report["issues"]}
-            self.assertEqual(found, {("static", "hold"), ("lead-in-off-beat", "hold"), ("double-impact", "moving")})
-            static = next(i for i in report["issues"] if i["kind"] == "static")
-            self.assertGreaterEqual(static["seconds"], 3)
+            self.assertEqual({(i["kind"], i["scene"]) for i in report["issues"]}, {("static", "hold")})
+            self.assertGreaterEqual(report["issues"][0]["seconds"], 3)
 
     def test_errors_point_at_the_film(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -146,31 +131,31 @@ class BrowserTests(unittest.TestCase):
             self.assertIn("two at", error)
             self.assertIn("glowing is not defined", error)
             self.assertIn(f"film.js:{line}:", error)
+            # 没声明声音的说话人在加载时就报错
+            Path(directory, "film.js").write_text(FILM.replace("'甲', '你好'", "'乙', '你好'"))
+            error = json.loads(run_script(directory, "check", "film.js").stdout)["error"]
+            self.assertIn('"乙" has no voice', error)
             if shutil.which("node"):
-                Path(directory, "film.js").write_text(FILM.replace("bars: 1,", "bars: 1,,", 1))
+                Path(directory, "film.js").write_text(FILM.replace("dur: 2,", "dur: 2,,", 1))
                 error = json.loads(run_script(directory, "check", "film.js").stdout)["error"]
                 self.assertIn("film.js:3", error)
                 self.assertIn("SyntaxError", error)
 
-    def test_timeline_build_and_resumable_render(self):
+    def test_build_and_resumable_render_carry_the_film_sound(self):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "film.js").write_text(FILM)
             subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "5",
-                            "-c:a", "libmp3lame", str(Path(directory, "score.mp3"))], check=True)
-            report = json.loads(run_script(directory, "timeline", "film.js", "--out", "timeline.json").stdout)
-            self.assertTrue(report["ok"])
-            timeline = json.loads(Path(directory, "timeline.json").read_text())
-            self.assertEqual([s["start"] for s in timeline["sections"]], [0, 2])
-            self.assertEqual(timeline["hits"], [{"t": 2, "k": 0.5}])
-            self.assertEqual(timeline["cues"], [{"t": 3, "name": "chime"}])
-
-            report = json.loads(run_script(directory, "build", "film.js", "--audio", "score.mp3", "--out", "outputs/test.html").stdout)
+                            "-c:a", "libmp3lame", str(Path(directory, "track.mp3"))], check=True)
+            report = json.loads(run_script(directory, "build", "film.js", "--out", "outputs/test.html").stdout)
             self.assertTrue(report["ok"], report)
+            self.assertFalse(report["audio"])
             html = Path(directory, "outputs/test.html").read_text()
-            self.assertIn("data:audio/mpeg;base64,", html)
-            self.assertIn('font-family: "Cinzel"', html)
+            self.assertIn('font-family: "STIX Two Text"', html)
+            self.assertNotIn("data:audio/", html)
+            report = json.loads(run_script(directory, "build", "film.js", "--audio", "track.mp3", "--out", "outputs/track.html").stdout)
+            self.assertIn("data:audio/mpeg;base64,", Path(directory, "outputs/track.html").read_text())
 
-            args = ["render", "film.js", "--audio", "score.mp3", "--out", "outputs/test.mp4", "--quality", "draft"]
+            args = ["render", "film.js", "--audio", "track.mp3", "--out", "outputs/test.mp4", "--quality", "draft"]
             first = json.loads(run_script(directory, *args, "--budget", "0").stdout)
             self.assertEqual((first["complete"], first["done_frames"], first["total_frames"]), (False, 0, 150))
             result = run_script(directory, *args, timeout=900)
@@ -178,6 +163,8 @@ class BrowserTests(unittest.TestCase):
             self.assertTrue(done["complete"], result.stdout + result.stderr)
             self.assertEqual((done["width"], done["height"], done["fps"]), (960, 540, 30))
             self.assertAlmostEqual(done["duration"], 5.0, delta=0.1)
+            # 另给的音轨是静音，成片里听得见的只能是片子自己合成的说话声和音效
+            self.assertGreater(max_volume(Path(directory, "outputs/test.mp4")), -20)
 
 
 if __name__ == "__main__":

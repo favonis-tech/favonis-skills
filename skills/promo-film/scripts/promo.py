@@ -1,7 +1,6 @@
-"""Check, export, build and render a promo film written for the bundled engine; every command prints a JSON report.
+"""Check, build and render an animated film written for the bundled engine; every command prints a JSON report.
 
     python promo.py check FILM.js [--sheet PNG] [--frames N | --at T,T,...]
-    python promo.py timeline FILM.js --out TIMELINE.json
     python promo.py build FILM.js --out outputs/NAME.html [--audio AUDIO]
     python promo.py render FILM.js --out outputs/NAME.mp4 [--audio AUDIO] [--quality draft|720p|1080p] [--budget SECONDS]
 """
@@ -23,15 +22,12 @@ from pathlib import Path
 SKILL = Path(__file__).resolve().parents[1]
 ASSETS = SKILL / "assets"
 WORK = Path(tempfile.gettempdir()) / "promo-film"
-QUALITY = {  # 渲染比例、运动模糊子帧数、x264 CRF、码率上限（胶片颗粒很费码率，不封顶时 1080p 会到 20 Mbps 以上）
-    "draft": (0.5, 1, 23, "3M"),
-    "720p": (2 / 3, 2, 21, "6M"),
-    "1080p": (1.0, 2, 20, "12M"),
+QUALITY = {  # 渲染比例、x264 CRF、码率上限
+    "draft": (0.5, 23, "3M"),
+    "720p": (2 / 3, 21, "5M"),
+    "1080p": (1.0, 20, "8M"),
 }
 BUNDLED_FONTS = [
-    ("Cinzel", "Cinzel.ttf", "400 900", "normal"),
-    ("Cormorant Garamond", "CormorantGaramond.ttf", "300 700", "normal"),
-    ("Cormorant Garamond", "CormorantGaramond-Italic.ttf", "300 700", "italic"),
     ("STIX Two Text", "STIXTwoText.ttf", "400 700", "normal"),
     ("STIX Two Text", "STIXTwoText-Italic.ttf", "400 700", "italic"),
 ]
@@ -41,10 +37,10 @@ SYSTEM_FONTS = [
     ("Noto Sans Mono", [("regular", 400), ("bold", 700)]),
 ]
 EXTRA_CHARS = "–—‘’“”…·•°×÷±→←↑↓∞√∑∏∫≈≠≤≥①②③④⑤"
-BROWSER_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
-                "--ignore-gpu-blocklist", "--mute-audio", "--allow-file-access-from-files", "--hide-scrollbars"]
-LEAD_INS = ("riser", "reverse", "swell")
-STATIC_CHANGE = 0.0005   # 半秒内变化的像素占比低于它，视为画面没动（镜头漂移约 0.2%，打出一个字约 0.1%）
+BROWSER_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--mute-audio", "--allow-file-access-from-files",
+                "--hide-scrollbars"]
+STATIC_CHANGE = 0.0005   # 半秒内变化的像素占比低于它，视为画面没动（打出一个字约 0.1%）
+CJK_PER_SECOND = 6       # 字幕阅读速度上限；写的时候按每秒 5 个字以内排
 STATIC_SECONDS = 3.0
 AUDIO_MIME = {".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".aac": "audio/aac", ".ogg": "audio/ogg", ".opus": "audio/ogg"}
 
@@ -196,7 +192,7 @@ def syntax_check(film):
 
 # ------------------------------------------------------------------ 无头浏览器
 class Page:
-    """Headless Chromium with software WebGL; the page runs in export mode and is driven through window.PROMO."""
+    """Headless Chromium; the page runs in export mode and is driven through window.PROMO."""
 
     def __init__(self, html, scale):
         from playwright.sync_api import sync_playwright
@@ -229,9 +225,12 @@ class Page:
         except Exception as e:
             raise Failure(page_error(getattr(e, "message", str(e)))) from None
 
-    def frame(self, t, scale, samples=1, fps=30):
-        url = self.call("([t, o]) => PROMO.frame(t, o)", [t, {"scale": scale, "samples": samples, "fps": fps}])
+    def frame(self, t, scale):
+        url = self.call("([t, o]) => PROMO.frame(t, o)", [t, {"scale": scale}])
         return base64.b64decode(url.split(",", 1)[1])
+
+    def audio(self):
+        return base64.b64decode(self.call("PROMO.audio()"))
 
     def close(self):
         try:
@@ -258,7 +257,7 @@ def subtitle_issues(info):
         cjk = sum(1 for c in sub["text"] if "⺀" <= c <= "鿿")
         words = len(sub["text"].split()) if not cjk else 0
         where = {"scene": sub["scene"], "at": round(sub["start"], 2), "text": sub["text"][:40]}
-        if cjk and cjk / dur > 7 or words and words / dur > 3.2:
+        if cjk and cjk / dur > CJK_PER_SECOND or words and words / dur > 3.2:
             issues.append({"kind": "subtitle-too-fast", **where, "seconds": round(dur, 2)})
         if sub["end"] > scenes[sub["scene"]]["end"] + 0.01:
             issues.append({"kind": "subtitle-past-scene", **where})
@@ -283,23 +282,6 @@ def static_issues(info, times, motion):
             start = run[0] - step
             issues.append({"kind": "static", "scene": scene_at(info, start), "at": round(start, 2), "seconds": round(len(run) * step, 1)})
         run = []
-    return issues
-
-
-def sound_issues(info):
-    """重拍上又叠撞击声；铺垫音效（落点在 t）没有落在场景开头、重拍、字幕、其他音效或拍点上。"""
-    beat = 60 / info["bpm"]
-    hits = [t for s in info["scenes"] for t, _ in s["hits"]]
-    marks = [s["start"] for s in info["scenes"]] + hits + [sub["start"] for sub in info["subs"]] \
-        + [c["t"] for c in info["cues"] if c["name"] not in LEAD_INS]
-    issues = []
-    for c in info["cues"]:
-        where = {"scene": c["scene"], "at": round(c["t"], 2), "sound": c["name"]}
-        if c["name"] in ("boom", "hit") and any(abs(c["t"] - h) < 0.1 for h in hits):
-            issues.append({"kind": "double-impact", **where})
-        elif c["name"] in LEAD_INS and not any(abs(c["t"] - m) < 0.15 for m in marks) \
-                and abs(c["t"] - round(c["t"] / beat) * beat) > 0.08:
-            issues.append({"kind": "lead-in-off-beat", **where})
     return issues
 
 
@@ -369,11 +351,11 @@ def command_check(args):
             scanned = page.call("times => PROMO.scan(times)", times[i:i + 40])
             issues += scanned["issues"]
             motion += scanned["motion"]
-        issues += static_issues(info, times, motion) + sound_issues(info)
+        issues += static_issues(info, times, motion)
         report = {
-            "ok": True, "issues": issues, "duration": round(info["duration"], 2), "size": info["size"], "bpm": info["bpm"],
+            "ok": True, "issues": issues, "duration": round(info["duration"], 2), "size": info["size"],
             "scenes": [{"name": s["name"], "start": round(s["start"], 2), "end": round(s["end"], 2)} for s in info["scenes"]],
-            "subtitles": len(info["subs"]),
+            "subtitles": len(info["subs"]), "lines": info["lines"], "sounds": info["cues"], "music": info["music"],
         }
         if fonts["missing"]:
             report["missing_fonts"] = fonts["missing"]
@@ -386,39 +368,7 @@ def command_check(args):
             raise Failure("\n".join(page.errors))
     finally:
         page.close()
-    if not info["webgl"]:
-        report["warnings"] = ["WebGL is unavailable in this browser: backdrops and the film grade are skipped"]
     return report
-
-
-# ------------------------------------------------------------------ timeline：交给 cue-score 的时间线
-def timeline_of(info):
-    music = info["music"]
-    style = music.get("style", "cinematic") if isinstance(music, dict) else None
-    sections, current = [], {"chords": [], "energy": 0}
-    for s in info["scenes"]:
-        if s["music"] is not None:
-            current = {"chords": list(s["music"].get("chords", [])), "energy": s["music"].get("energy", 0)}
-        sections.append({"name": s["name"], "start": round(s["start"], 4), "end": round(s["end"], 4),
-                         **(current if style else {"chords": [], "energy": 0})})
-    cues = [{k: v for k, v in c.items() if k != "scene"} for c in info["cues"]]
-    hits = [{"t": round(t, 4), "k": k} for s in info["scenes"] for t, k in s["hits"]]
-    return {"duration": round(info["duration"], 4), "bpm": info["bpm"], "style": style or "cinematic",
-            "sections": sections, "hits": hits, "cues": cues}
-
-
-def command_timeline(args):
-    html, _ = build_html(args.film)
-    page = Page(html, 0.25)
-    try:
-        timeline = timeline_of(page.info)
-    finally:
-        page.close()
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(timeline, ensure_ascii=False, indent=1), encoding="utf-8")
-    return {"ok": True, "output": str(out), "duration": timeline["duration"], "bpm": timeline["bpm"],
-            "sections": len(timeline["sections"]), "hits": len(timeline["hits"]), "cues": len(timeline["cues"])}
 
 
 # ------------------------------------------------------------------ build
@@ -465,7 +415,7 @@ def command_build(args):
 
 
 # ------------------------------------------------------------------ render：分段渲染，超时后再次运行从断点继续
-def encode_chunk(page, path, frames, fps, scale, samples, crf, maxrate):
+def encode_chunk(page, path, frames, fps, scale, crf, maxrate):
     part = path.with_suffix(".part.mp4")
     ffmpeg = subprocess.Popen(
         ["ffmpeg", "-v", "error", "-y", "-f", "image2pipe", "-framerate", str(fps), "-c:v", "mjpeg", "-i", "-",
@@ -474,7 +424,7 @@ def encode_chunk(page, path, frames, fps, scale, samples, crf, maxrate):
         stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         for n in frames:
-            ffmpeg.stdin.write(page.frame(n / fps, scale, samples, fps))
+            ffmpeg.stdin.write(page.frame(n / fps, scale))
         ffmpeg.stdin.close()
     except BaseException:
         ffmpeg.kill()
@@ -490,7 +440,7 @@ def command_render(args):
         raise Failure("--out must end with .mp4")
     if args.audio and not Path(args.audio).is_file():
         raise Failure(f"audio file not found: {args.audio}")
-    scale, samples, crf, maxrate = QUALITY[args.quality]
+    scale, crf, maxrate = QUALITY[args.quality]
     started = time.time()
     html, _ = build_html(args.film)
     work = WORK / "render" / digest(html, QUALITY[args.quality], args.fps)
@@ -498,6 +448,9 @@ def command_render(args):
     page = Page(html, scale)
     try:
         info = page.info
+        sound = work / "sound.wav"
+        if not sound.exists():
+            sound.write_bytes(page.audio())
         total = round(info["duration"] * args.fps)
         per_chunk = args.fps * 8
         chunks = [work / f"chunk-{i:04d}.mp4" for i in range(math.ceil(total / per_chunk))]
@@ -509,7 +462,7 @@ def command_render(args):
             if time.time() - started + estimate * 1.15 > args.budget:
                 break
             t0 = time.time()
-            encode_chunk(page, chunk, range(i * per_chunk, min(total, (i + 1) * per_chunk)), args.fps, scale, samples, crf, maxrate)
+            encode_chunk(page, chunk, range(i * per_chunk, min(total, (i + 1) * per_chunk)), args.fps, scale, crf, maxrate)
             spent.append(time.time() - t0)
             print(f"chunk {i + 1}/{len(chunks)} in {spent[-1]:.0f} s", file=sys.stderr, flush=True)
     finally:
@@ -523,10 +476,13 @@ def command_render(args):
                 "next": "Run the same command again; finished chunks are kept and rendering resumes where it stopped."}
     listing = work / "chunks.txt"
     listing.write_text("".join(f"file '{c}'\n" for c in chunks))
-    command = ["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing)]
+    # 片子自己合成的声音总是混进去；另给的音轨与它叠加，不压低任何一方
+    command = ["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-i", str(sound)]
     if args.audio:
-        command += ["-i", args.audio, "-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac", "-b:a", "192k"]
-    command += ["-c:v", "copy", "-t", f"{info['duration']:.3f}", "-movflags", "+faststart", str(work / "film.mp4")]
+        command += ["-i", args.audio, "-filter_complex", "[1:a][2:a]amix=inputs=2:duration=first:normalize=0[a]", "-map", "0:v:0", "-map", "[a]"]
+    else:
+        command += ["-map", "0:v:0", "-map", "1:a:0"]
+    command += ["-c:a", "aac", "-b:a", "192k", "-c:v", "copy", "-t", f"{info['duration']:.3f}", "-movflags", "+faststart", str(work / "film.mp4")]
     run = subprocess.run(command, capture_output=True, text=True)
     if run.returncode:
         raise Failure("ffmpeg failed: " + run.stderr.strip()[-800:])
@@ -550,17 +506,14 @@ def main():
                        "by default one frame in the middle of every subtitle and one per scene without subtitles")
     check.add_argument("--frames", type=int, help="Evenly spaced frames instead of the subtitle frames")
     check.add_argument("--at", help="Comma-separated film times in seconds")
-    timeline = sub.add_parser("timeline", help="Export the music timeline JSON for the cue-score skill")
-    timeline.add_argument("film")
-    timeline.add_argument("--out", required=True)
     build = sub.add_parser("build", help="Write the self-contained HTML player")
     build.add_argument("film")
     build.add_argument("--out", required=True)
-    build.add_argument("--audio", help="Soundtrack to embed (MP3 recommended; other formats are converted)")
+    build.add_argument("--audio", help="Extra track to play under the film's own sound (MP3 recommended; other formats are converted)")
     render = sub.add_parser("render", help="Render an MP4 in resumable chunks")
     render.add_argument("film")
     render.add_argument("--out", required=True)
-    render.add_argument("--audio", help="Soundtrack to mux")
+    render.add_argument("--audio", help="Extra track to mix under the film's own sound")
     render.add_argument("--quality", choices=QUALITY, default="1080p")
     render.add_argument("--fps", type=int, default=30)
     render.add_argument("--budget", type=float, default=1500, help="Stop starting new chunks after this many seconds (default 1500)")
@@ -570,7 +523,7 @@ def main():
     if args.command == "check" and args.frames and args.at:
         parser.error("use either --frames or --at")
     try:
-        report = {"check": command_check, "timeline": command_timeline, "build": command_build, "render": command_render}[args.command](args)
+        report = {"check": command_check, "build": command_build, "render": command_render}[args.command](args)
     except Failure as e:
         emit({"ok": False, "error": str(e)}, 1)
     emit(report)

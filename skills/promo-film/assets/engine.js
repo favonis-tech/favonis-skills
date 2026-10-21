@@ -1,52 +1,71 @@
 'use strict';
-// 宣传片引擎：场景时间线、Canvas 2D 图层、WebGL 背景与胶片后期、字幕与章节卡、播放器、逐帧导出接口。
-// film.js 在本文件之后执行，只调用这里的全局函数。画面只由时间决定，所以导出与实时播放逐帧一致。
+// 动画短片引擎：场景时间线、Canvas 2D 绘制、像素角色、界面零件、对白与字幕、合成音轨、播放器和逐帧导出接口。
+// film.js 在本文件之后执行，只调用这里的全局函数。画面和声音都只由时间决定，所以导出与实时播放逐帧一致。
 
 const PI = Math.PI, TAU = Math.PI * 2;
-let W = 1920, H = 1080, BPM = 90, BEAT = 60 / 90, BAR = 4 * 60 / 90;
-let ctx = null;
+let W = 1920, H = 1080;
 
 const FILM = {
-  title: '', tagline: '', size: [1920, 1080], bpm: 90, grade: 'neutral',
-  bloom: null, grain: null, vignette: null, tail: 2, poster: null, music: { style: 'cinematic' },
+  title: '', tagline: '', size: [1920, 1080], bg: '#16120f', tail: 1.5, poster: null,
+  subtitle: {}, voices: {}, music: false,
 };
-const SCENES = [];
-const GRADES = {
-  neutral: { lift: [0, 0, 0], gain: [1, 1, 1], sat: 1, contrast: 1.04, bloom: .55, grain: .3, vignette: .45 },
-  gold: { lift: [.012, .006, 0], gain: [1.05, .99, .86], sat: 1.04, contrast: 1.08, bloom: .85, grain: .35, vignette: .6 },
-  teal: { lift: [0, .016, .022], gain: [1.05, 1, .93], sat: 1.06, contrast: 1.07, bloom: .7, grain: .3, vignette: .5 },
-  cool: { lift: [0, .006, .02], gain: [.94, 1, 1.07], sat: .96, contrast: 1.05, bloom: .7, grain: .28, vignette: .5 },
-  noir: { lift: [0, 0, 0], gain: [1, 1, 1], sat: .12, contrast: 1.18, bloom: .5, grain: .5, vignette: .7 },
-};
-const BACKDROPS = { nebula: 1, aurora: 2, grid: 3, silk: 4 };
+const SCENES = [], SUBS = [], LINES = [], CUES = [];
 const FONT = {
   serif: '"Noto Serif CJK SC", "Noto Serif SC", "Songti SC", "SimSun", serif',
   sans: '"Noto Sans CJK SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
-  display: '"Cinzel", "Noto Serif CJK SC", serif',
-  italic: '"Cormorant Garamond", "Noto Serif CJK SC", serif',
+  mono: '"Noto Sans Mono", "SF Mono", "Menlo", "Consolas", "Noto Sans CJK SC", monospace',
   math: '"STIX Two Text", "Noto Serif CJK SC", serif',
-  mono: '"Noto Sans Mono", "Noto Sans CJK SC", "Menlo", "Consolas", monospace',
 };
 const PARAMS = new URLSearchParams(location.search);
 const EXPORT = PARAMS.has('export');
-let DURATION = 0;
+let DURATION = 0, filmed = false;
 
 function film(o) {
   if (SCENES.length) throw new Error('call film() before the first scene()');
   Object.assign(FILM, o);
   [W, H] = FILM.size;
-  BPM = FILM.bpm; BEAT = 60 / BPM; BAR = 4 * BEAT;
-  if (!GRADES[FILM.grade]) throw new Error(`unknown grade "${FILM.grade}"; use ${Object.keys(GRADES).join(', ')}`);
+  for (const [who, v] of Object.entries(FILM.voices || {})) {
+    if (v.tone && !VOICE_TONES[v.tone]) throw new Error(`voice "${who}": unknown tone "${v.tone}"; use ${Object.keys(VOICE_TONES).join(', ')}`);
+    (v.notes || []).forEach(noteHz);
+  }
+  if (FILM.music) (FILM.music.chords || []).forEach(chordNotes);
+  filmed = true;
 }
 function scene(o) {
+  if (!filmed) throw new Error('call film() before the first scene()');
   const name = o.name || `scene ${SCENES.length + 1}`;
-  if (!(o.bars > 0) || Math.abs(o.bars * 4 - Math.round(o.bars * 4)) > 1e-6) throw new Error(`${name}: bars must be a positive multiple of 0.25 (one beat)`);
+  if (!(o.dur > 0)) throw new Error(`${name}: dur must be a positive number of seconds`);
   if (typeof o.draw !== 'function') throw new Error(`${name}: draw(t, d) is missing`);
-  SCENES.push({ ...o, name });
-  return o;
+  const start = SCENES.length ? SCENES[SCENES.length - 1].end : 0;
+  const sc = { ...o, name, start, end: start + o.dur, d: o.dur };
+  SCENES.push(sc);
+  for (const sub of o.subs || []) {
+    const [a, b, t1, t2] = sub;
+    if (!(b > a) || typeof t1 !== 'string') throw new Error(`${name}: each subtitle is [start, end, text, secondLine?] with end > start`);
+    SUBS.push({ start: start + a, end: start + b, text: t1, second: t2, scene: name });
+  }
+  for (const line of o.say || []) {
+    const [t, who, str, opt = {}] = line, v = (FILM.voices || {})[who];
+    if (!(t >= 0) || typeof str !== 'string') throw new Error(`${name}: each line is [t, who, text, { cps, silent, tag }?]`);
+    if (!v) throw new Error(`${name}: "${who}" has no voice; declare it in film({ voices })`);
+    const chars = [...str], cps = opt.cps ?? v.cps ?? 12;
+    LINES.push({ who, text: str, chars, cps, start: start + t, end: start + t + chars.length / cps, scene: name, silent: !!opt.silent, tag: opt.tag });
+  }
+  for (const [t, kind, opt] of o.sfx || []) addSound(start + t, kind, opt, name);
+  if (o.music) (o.music.chords || []).forEach(chordNotes);
+  for (const list of [SUBS, LINES]) list.sort((a, b) => a.start - b.start);
+  return { name, start, end: sc.end };
+}
+// 在全片时间上加音效：跨场景的状态表（比如一串离队时刻）可以直接配声
+function sound(T, kind, opt) { addSound(T, kind, opt, 'sound()'); }
+function addSound(T, kind, opt = {}, where) {
+  if (!SOUNDS[kind]) throw new Error(`${where}: unknown sound "${kind}"; use ${Object.keys(SOUNDS).join(', ')}`);
+  if (!(T >= 0)) throw new Error(`${where}: sound "${kind}" needs a time of 0 s or later`);
+  CUES.push({ ...opt, t: T, name: kind });
+  CUES.sort((a, b) => a.t - b.t);
 }
 
-// ------------------------------------------------------------------ 数学与缓动
+// ------------------------------------------------------------------ 数学、缓动与阶梯运动
 const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
@@ -56,7 +75,6 @@ const ease = {
   in: t => t * t * t,
   out: t => 1 - (1 - t) ** 3,
   inOut: t => t < .5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2,
-  expo: t => t >= 1 ? 1 : 1 - 2 ** (-10 * t),
   back: t => 1 + 2.7 * (t - 1) ** 3 + 1.7 * (t - 1) ** 2,
   sine: t => .5 - .5 * Math.cos(PI * t),
 };
@@ -72,13 +90,36 @@ function rgba(hex, a = 1) {
     ? `rgba(${(n >> 8 & 15) * 17},${(n >> 4 & 15) * 17},${(n & 15) * 17},${a})`
     : `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
 }
-const hexRGB = hex => { const n = parseInt(hex.slice(1), 16); return hex.length === 4 ? [(n >> 8 & 15) / 15, (n >> 4 & 15) / 15, (n & 15) / 15] : [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
+// 像素物体按帧率取整时间，动作一格一格地走，不和界面的平滑缓动混在一起
+const stepped = (x, fps = 12) => Math.floor(x * fps + 1e-6) / fps;
+function hop(t, at, o = {}) {
+  const dur = o.dur ?? .35, height = o.height ?? 2;
+  let up = 0;
+  for (const a of [].concat(at)) {
+    const k = stepped(t - a) / dur;
+    if (k >= 0 && k < 1) up = Math.max(up, Math.round(height * Math.sin(PI * k)));
+  }
+  return up;
+}
+const blinkCache = new Map();
+function blinking(T, o = {}) {
+  const seed = o.seed ?? 1, [lo, hi] = o.every ?? [2.5, 4.5], dur = o.dur ?? .12, key = `${seed}|${lo}|${hi}`;
+  let list = blinkCache.get(key);
+  if (!list) {
+    const r = rng(seed); list = [];
+    for (let x = .8 + r() * lo; x < 3600; x += lo + r() * (hi - lo)) list.push(x);
+    blinkCache.set(key, list);
+  }
+  for (const b of list) { if (b > T) break; if (T < b + dur) return true; }
+  return false;
+}
+const breathe = (t, o = {}) => { const p = o.period ?? 1.6, h = o.hold ?? .4; return ((t % p) + p) % p >= p - h ? 1 : 0; };
 
 // ------------------------------------------------------------------ 文字
 const PIXEL = { scale: 1 };
 let track = null;                                                // check 模式下记录每段文字的包围盒
 
-function fontOf(o) { return `${o.style || ''} ${o.weight || 400} ${o.size || 40}px ${o.font || FONT.serif}`; }
+function fontOf(o) { return `${o.style || ''} ${o.weight || 400} ${o.size || 40}px ${o.font || FONT.sans}`; }
 function record(str, x0, y0, x1, y1, alpha) {
   if (!track || alpha < .05 || !String(str).trim()) return;
   const m = ctx.getTransform(), s = PIXEL.scale;
@@ -90,33 +131,50 @@ function spacing(ls = 0) {
   if ('letterSpacing' in ctx) { ctx.letterSpacing = ls + 'px'; return 0; }
   return ls;                                                     // 不支持 letterSpacing 的浏览器逐字排
 }
+const plain = str => Array.isArray(str) ? str.map(p => Array.isArray(p) ? p[0] : p).join('') : String(str);
 function measure(str, o = {}) {
+  str = plain(str);
   ctx.save(); ctx.font = fontOf(o);
-  const manual = spacing(o.ls), w = ctx.measureText(str).width + manual * [...str].length;
+  const manual = spacing(o.ls), w = ctx.measureText(str).width + manual * [...str].length - (o.ls || 0);
   ctx.restore();
   return w;
 }
+// str 可以是 [[文字, 颜色], ...] 分段着色；upto 只画前 n 个字，但按整句排版，打字时位置不跳
 function text(str, x, y, o = {}) {
-  str = String(str);
+  const parts = Array.isArray(str) ? str.map(p => Array.isArray(p) ? [String(p[0]), p[1]] : [String(p), null]) : [[String(str), null]];
   ctx.save();
   ctx.font = fontOf(o);
   ctx.textAlign = 'left'; ctx.textBaseline = o.base || 'middle';
-  const manual = spacing(o.ls), chars = [...str];
-  const width = ctx.measureText(str).width + manual * chars.length - (o.ls || 0);
+  const manual = spacing(o.ls);
+  const widthOf = s => ctx.measureText(s).width + manual * [...s].length;
+  const widths = parts.map(([s]) => widthOf(s));
+  const width = widths.reduce((a, b) => a + b, 0) - (o.ls || 0);
   const align = o.align || 'center';
   const left = align === 'center' ? x - width / 2 : align === 'right' ? x - width : x;
-  const alpha = o.alpha ?? 1;
-  ctx.globalAlpha *= alpha;
+  ctx.globalAlpha *= o.alpha ?? 1;
   if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.blur ?? 24; }
-  ctx.fillStyle = o.color || '#fff';
-  if (o.stroke) { ctx.strokeStyle = o.stroke; ctx.lineWidth = o.lineWidth || 2; }
-  const put = (s, px) => { if (o.stroke) ctx.strokeText(s, px, y); if (o.fill !== false) ctx.fillText(s, px, y); };
-  if (manual) { let px = left; for (const c of chars) { put(c, px); px += ctx.measureText(c).width + manual; } }
-  else put(str, left);
-  // 按实际字形边界记录，留白不算，检查重叠和越界时才不会误报
-  const ink = ctx.measureText(str);
-  record(str, left - ink.actualBoundingBoxLeft, y - ink.actualBoundingBoxAscent, manual ? left + width : left + ink.actualBoundingBoxRight,
-    y + ink.actualBoundingBoxDescent, ctx.globalAlpha);
+  if (o.stroke) { ctx.strokeStyle = o.stroke; ctx.lineWidth = o.lineWidth || 2; ctx.lineJoin = 'round'; }
+  const put = (s, px) => {
+    const one = c => { if (o.stroke) ctx.strokeText(c, px, y); if (o.fill !== false) ctx.fillText(c, px, y); };
+    if (!manual) return one(s);
+    for (const c of s) { one(c); px += ctx.measureText(c).width + manual; }
+  };
+  let budget = o.upto == null ? Infinity : Math.max(0, Math.floor(o.upto)), px = left, drawn = '';
+  for (let i = 0; i < parts.length && budget > 0; i++) {
+    let [s, color] = parts[i];
+    const chars = [...s];
+    if (chars.length > budget) s = chars.slice(0, budget).join('');
+    budget -= Math.min(budget, chars.length);
+    ctx.fillStyle = color || o.color || '#fff';
+    put(s, px);
+    drawn += s; px += widths[i];
+  }
+  if (drawn) {
+    // 按实际字形边界记录，留白不算，检查重叠和越界时才不会误报
+    const ink = ctx.measureText(drawn);
+    record(drawn, left - ink.actualBoundingBoxLeft, y - ink.actualBoundingBoxAscent, manual ? left + widthOf(drawn) : left + ink.actualBoundingBoxRight,
+      y + ink.actualBoundingBoxDescent, ctx.globalAlpha);
+  }
   ctx.restore();
   return width;
 }
@@ -125,7 +183,7 @@ function lines(str, maxWidth, o = {}) {
   const out = [];
   for (const para of String(str).split('\n')) {
     // 中日韩按字断行，拉丁文按词断行
-    const tokens = para.match(/[⺀-鿿豈-﫿＀-￯][，。、；：！？）」』》]?|[^\s⺀-鿿]+\s*|\s+/g) || [''];
+    const tokens = para.match(/[⺀-鿿豈-﫿＀-￯][，。、；：！？）」』》]?|[^\s⺀-鿿]+\s*|\s+/g) || [''];
     let line = '';
     for (const tk of tokens) {
       if (line && ctx.measureText(line + tk).width > maxWidth) { out.push(line.trimEnd()); line = tk.trimStart(); }
@@ -148,455 +206,331 @@ function count(value, k, o = {}) {
   return v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: o.group !== false });
 }
 
-const METALS = {
-  gold: ['#6e4b1b', '#d9b25c', '#fff6dc', '#c99a45', '#7a5520'],
-  silver: ['#5d6470', '#c9d0da', '#ffffff', '#aab3c0', '#5d6470'],
-  rose: ['#6b2f2a', '#e3a08f', '#fff0ea', '#cf8573', '#6b2f2a'],
-};
-// 逐字浮现的金属质感标题：t 是从开始浮现起的秒数，sweep 是高光扫过的位置（0–1，默认随时间扫过一次）。
-function title(str, x, y, o = {}) {
-  const size = o.size || 160, ls = o.ls ?? size * .12, t = o.t ?? 99;
-  const font = o.font || FONT.serif, weight = o.weight || 900;
-  const chars = [...String(str)], stagger = o.stagger ?? .09, dur = o.dur ?? .9;
-  ctx.save();
-  ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
-  const widths = chars.map(c => ctx.measureText(c).width), total = widths.reduce((a, b) => a + b, 0) + ls * (chars.length - 1);
-  const left = x - total / 2, metal = METALS[o.metal || 'gold'];
-  const sweep = o.sweep ?? clamp((t - chars.length * stagger - .2) / 1.6) * 1.3 - .15;
-  let fill = o.color;
-  if (!fill) {
-    fill = ctx.createLinearGradient(left, y - size / 2, left + total, y + size / 2);
-    fill.addColorStop(0, metal[0]); fill.addColorStop(.3, metal[1]);
-    if (sweep > .06 && sweep < .94) { fill.addColorStop(sweep - .06, metal[1]); fill.addColorStop(sweep, metal[2]); fill.addColorStop(sweep + .06, metal[3]); }
-    fill.addColorStop(.72, metal[3]); fill.addColorStop(1, metal[4]);
+// ------------------------------------------------------------------ 对白：说话的人、打字进度、说话声
+function dialogue(T, o = {}) {
+  const who = o.who == null ? null : [].concat(o.who), out = [];
+  for (const l of LINES) {
+    if (l.start > T) break;
+    if (who && !who.includes(l.who)) continue;
+    if (o.since != null && l.start < o.since) continue;
+    if (o.until != null && l.start >= o.until) continue;
+    const n = Math.min(l.chars.length, Math.floor((T - l.start) * l.cps + 1e-6));
+    out.push({ who: l.who, text: l.chars.slice(0, n).join(''), full: l.text, shown: n, start: l.start, end: l.end, typing: T < l.end, tag: l.tag });
   }
-  const base = ctx.globalAlpha * (o.alpha ?? 1);
-  let px = left;
-  chars.forEach((c, i) => {
-    const k = ease.out(progress(t, i * stagger, dur));
-    if (k > 0) {
-      ctx.save();
-      ctx.globalAlpha = base * k;
-      ctx.translate(px + widths[i] / 2, y + (1 - k) * size * .22);
-      const g = 1 + (1 - k) * .12; ctx.scale(g, g);
-      if (o.glow !== false) { ctx.shadowColor = o.glow || rgba(metal[2], .45); ctx.shadowBlur = size * .18; }
-      ctx.fillStyle = fill; ctx.translate(-(px + widths[i] / 2), -y);
-      ctx.fillText(c, px, y);
-      ctx.restore();
-    }
-    px += widths[i] + ls;
-  });
-  const ink = ctx.measureText(String(str));
-  record(str, left, y - ink.actualBoundingBoxAscent, left + total, y + ink.actualBoundingBoxDescent, base);
-  ctx.restore();
-  return total;
+  return o.last ? out.slice(-o.last) : out;
 }
-// RGB 分离加横向错切的故障字，常用于快切镜头
-function glitch(str, x, y, o = {}) {
-  const size = o.size || 120, seed = (o.seed || 0) + Math.floor((o.t || 0) * 24);
-  const base = { ...o, size, glow: null };
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  [['#ff2a4a', -1], ['#22e4ff', 1]].forEach(([c, s], i) => text(str, x + s * size * .03 * hash(seed + i), y, { ...base, color: c, alpha: (o.alpha ?? 1) * .7 }));
-  ctx.restore();
-  for (let i = 0; i < 4; i++) {
-    const h = size * (.12 + .2 * hash(seed * 3 + i)), yy = y - size * .6 + hash(seed * 7 + i) * size * 1.1;
-    ctx.save(); ctx.beginPath(); ctx.rect(x - W, yy, 2 * W, h); ctx.clip();
-    ctx.translate((hash(seed * 11 + i) - .5) * size * .35, 0);
-    text(str, x, y, { ...base, color: o.color || '#fff' });
-    ctx.restore();
-  }
-  text(str, x, y, { ...base, color: o.color || '#fff', alpha: (o.alpha ?? 1) * .85 });
-}
+const speaking = (T, who) => LINES.some(l => l.who === who && T >= l.start && T < l.end);
 
-// ------------------------------------------------------------------ 光效、粒子与 3D
-function glow(x, y, r, color = '#fff', a = 1) {
+// ------------------------------------------------------------------ 界面零件与图解
+function roundRect(x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+// 面板或窗口：返回内容区（有标题栏时不含标题栏）
+function panel(x, y, w, h, o = {}) {
+  const r = o.radius ?? 18, bar = o.title != null ? o.bar ?? 52 : 0;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.shadow) { ctx.shadowColor = o.shadow === true ? 'rgba(0,0,0,.35)' : o.shadow; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12; }
+  roundRect(x, y, w, h, r); ctx.fillStyle = o.fill ?? '#201a16'; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  if (o.stroke !== false) { ctx.lineWidth = o.lineWidth ?? 2; ctx.strokeStyle = o.stroke ?? '#3a3029'; ctx.stroke(); }
+  if (bar) {
+    ctx.fillStyle = o.stroke || '#3a3029'; ctx.fillRect(x, y + bar, w, o.lineWidth ?? 2);
+    if (o.dots) for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x + 28 + i * 22, y + bar / 2, 6, 0, TAU); ctx.fillStyle = o.dots === true ? '#4a3f37' : o.dots; ctx.fill(); }
+  }
+  ctx.restore();
+  if (bar && o.title) text(o.title, x + w / 2, y + bar / 2, { font: o.font ?? FONT.sans, size: o.titleSize ?? 24, color: o.titleColor ?? '#8a7f74', alpha: o.alpha ?? 1 });
+  return { x, y: y + bar, w, h: h - bar };
+}
+// 带底色的标签：章节标签、token 方块、价签。返回外框
+function chip(str, x, y, o = {}) {
+  const size = o.size ?? 28, font = o.font ?? FONT.sans, weight = o.weight ?? 600, [px, py] = o.pad ?? [size * .5, size * .28];
+  const w = measure(str, { size, font, weight, ls: o.ls }) + px * 2, h = size * 1.15 + py * 2;
+  const left = o.align === 'left' ? x : o.align === 'right' ? x - w : x - w / 2;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  roundRect(left, y - h / 2, w, h, o.radius ?? 8);
+  if (o.fill !== false) { ctx.fillStyle = o.fill ?? '#D97757'; ctx.fill(); }
+  if (o.outline) { ctx.lineWidth = o.lineWidth ?? 3; ctx.strokeStyle = o.outline; ctx.stroke(); }
+  ctx.restore();
+  text(str, left + w / 2, y, { size, font, weight, ls: o.ls, color: o.color ?? '#1b1410', alpha: o.alpha ?? 1, upto: o.upto });
+  return { x: left, y: y - h / 2, w, h };
+}
+// 对话气泡：(x, y) 是尾巴尖，气泡默认在上方；按整句定宽，打字时不变形
+function bubble(str, x, y, o = {}) {
+  const size = o.size ?? 30, font = o.font ?? FONT.sans, [px, py] = o.pad ?? [size * .7, size * .45];
+  const w = Math.max(measure(str, { size, font, weight: o.weight }) + px * 2, size * 2.4), h = size * 1.25 + py * 2;
+  const tail = o.tail ?? 16, below = o.side === 'below', r = o.radius ?? Math.min(18, h / 2);
+  const bx = x - w / 2 + (o.shift ?? 0), by = below ? y + tail : y - tail - h, edge = below ? by : by + h;
+  const tx = clamp(x, bx + r + tail, bx + w - r - tail);
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  ctx.beginPath();
+  ctx.moveTo(bx + r, by);
+  if (below) { ctx.lineTo(tx - tail * .7, edge); ctx.lineTo(x, y); ctx.lineTo(tx + tail * .7, edge); }
+  ctx.arcTo(bx + w, by, bx + w, by + h, r); ctx.arcTo(bx + w, by + h, bx, by + h, r);
+  if (!below) { ctx.lineTo(tx + tail * .7, edge); ctx.lineTo(x, y); ctx.lineTo(tx - tail * .7, edge); }
+  ctx.arcTo(bx, by + h, bx, by, r); ctx.arcTo(bx, by, bx + w, by, r); ctx.closePath();
+  ctx.fillStyle = o.fill ?? '#fffaf2'; ctx.fill();
+  if (o.stroke !== false) { ctx.lineWidth = o.lineWidth ?? 2; ctx.strokeStyle = o.stroke ?? '#d9cfbf'; ctx.lineJoin = 'round'; ctx.stroke(); }
+  ctx.restore();
+  text(str, bx + w / 2, by + h / 2, { size, font, weight: o.weight, color: o.color ?? '#2b2622', alpha: o.alpha ?? 1, upto: o.upto });
+  return { x: bx, y: by, w, h };
+}
+// 方格阵列：上下文窗口、参数、计数墙、条形图。color(i, col, row) 返回颜色，返回 null 不画
+function cells(x, y, cols, rows, o = {}) {
+  const size = o.size ?? 22, pitch = size + (o.gap ?? 4);
+  const at = i => ({ x: x + (i % cols) * pitch, y: y + Math.floor(i / cols) * pitch });
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  for (let i = 0; i < cols * rows; i++) {
+    const c = typeof o.color === 'function' ? o.color(i, i % cols, Math.floor(i / cols)) : o.color ?? '#2a221d';
+    if (!c) continue;
+    const p = at(i);
+    ctx.fillStyle = c;
+    if (o.radius) { roundRect(p.x, p.y, size, size, o.radius); ctx.fill(); } else ctx.fillRect(p.x, p.y, size, size);
+  }
+  ctx.restore();
+  return { x, y, w: cols * pitch - (o.gap ?? 4), h: rows * pitch - (o.gap ?? 4), at };
+}
+// 箭头：k 是画出的比例（0–1），dash 为虚线段长
+function arrow(x0, y0, x1, y1, o = {}) {
+  const k = o.k ?? 1; if (k <= 0) return;
+  const x = lerp(x0, x1, k), y = lerp(y0, y1, k), a = Math.atan2(y1 - y0, x1 - x0), head = o.head ?? 16;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  ctx.strokeStyle = ctx.fillStyle = o.color ?? '#f3ece4'; ctx.lineWidth = o.width ?? 4; ctx.lineCap = 'round';
+  if (o.dash) ctx.setLineDash([o.dash, o.dash * .8]);
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x - Math.cos(a) * head * .6, y - Math.sin(a) * head * .6); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(x, y);
+  ctx.lineTo(x - Math.cos(a - .45) * head, y - Math.sin(a - .45) * head); ctx.lineTo(x - Math.cos(a + .45) * head, y - Math.sin(a + .45) * head);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function caret(x, y, h, T, o = {}) {
+  if ((T % 1 + 1) % 1 >= .5) return;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1; ctx.fillStyle = o.color ?? '#f3ece4'; ctx.fillRect(x, y - h / 2, h * .5, h); ctx.restore();
+}
+function dotgrid(o = {}) {
+  const gap = o.gap ?? 32, r = o.size ?? 2;
+  ctx.save(); ctx.fillStyle = o.color ?? '#ffffff'; ctx.globalAlpha *= o.alpha ?? .04;
+  for (let y = gap / 2; y < H; y += gap) for (let x = gap / 2; x < W; x += gap) ctx.fillRect(x - r / 2, y - r / 2, r, r);
+  ctx.restore();
+}
+function vignette(a = .5, color = '#000000') {
+  const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .35, W / 2, H / 2, Math.hypot(W, H) * .6);
+  g.addColorStop(0, rgba(color, 0)); g.addColorStop(1, rgba(color, a));
+  ctx.save(); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+function glow(x, y, r, color = '#ffffff', a = 1) {
   if (r <= 0 || a <= 0) return;
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
   const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, rgba('#ffffff', a)); g.addColorStop(.15, rgba(color, a * .85)); g.addColorStop(.45, rgba(color, a * .22)); g.addColorStop(1, rgba(color, 0));
+  g.addColorStop(0, rgba(color, a * .8)); g.addColorStop(.4, rgba(color, a * .25)); g.addColorStop(1, rgba(color, 0));
   ctx.fillStyle = g; ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
   ctx.restore();
 }
-function flare(x, y, a = 1, o = {}) {
-  if (a <= 0) return;
-  const len = o.len || W * .45, color = o.color || '#9fc8ff';
-  ctx.save(); ctx.globalCompositeOperation = 'lighter';
-  const g = ctx.createLinearGradient(x - len, 0, x + len, 0);
-  g.addColorStop(0, rgba(color, 0)); g.addColorStop(.5, rgba(color, .55 * a)); g.addColorStop(1, rgba(color, 0));
-  ctx.fillStyle = g; ctx.fillRect(x - len, y - 2.5, 2 * len, 5);
-  ctx.restore();
-  glow(x, y, (o.r || 90), color, a * .8);
+
+// ------------------------------------------------------------------ 像素角色与物件
+function sprite(rows, palette = {}) {
+  const grid = rows.map(r => [...r]);
+  for (const ch of new Set(grid.flat())) if (ch !== '.' && ch !== ' ' && !(ch in palette)) throw new Error(`sprite: no colour for "${ch}"`);
+  return { rows: grid, w: Math.max(...grid.map(r => r.length)), h: grid.length, palette };
 }
-function rays(x, y, t, o = {}) {
-  const n = o.count || 24, a = o.alpha ?? .5, len = o.len || Math.hypot(W, H), color = o.color || '#ffd9a0';
-  if (a <= 0) return;
-  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.translate(x, y); ctx.rotate(t * (o.speed ?? .05));
-  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, len);
-  g.addColorStop(0, rgba(color, a)); g.addColorStop(.15, rgba(color, a * .4)); g.addColorStop(.5, rgba(color, a * .06)); g.addColorStop(1, rgba(color, 0));
-  ctx.fillStyle = g;
-  for (let i = 0; i < n; i++) {
-    const th = i / n * TAU, w = (o.width || .022) * (.5 + hash(i + 7));
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, len, th - w, th + w); ctx.closePath(); ctx.fill();
+const revealCache = new WeakMap();
+function revealRank(sp, seed) {
+  let bySeed = revealCache.get(sp);
+  if (!bySeed) revealCache.set(sp, bySeed = new Map());
+  if (!bySeed.has(seed)) {
+    const filled = [];
+    sp.rows.forEach((row, r) => row.forEach((ch, c) => { if (ch !== '.' && ch !== ' ') filled.push(r * sp.w + c); }));
+    const rand = rng(seed);
+    for (let i = filled.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [filled[i], filled[j]] = [filled[j], filled[i]]; }
+    const rank = new Float32Array(sp.w * sp.h);
+    filled.forEach((idx, i) => { rank[idx] = (i + 1) / filled.length; });
+    bySeed.set(seed, rank);
+  }
+  return bySeed.get(seed);
+}
+// 按格画像素图。每格的边缘对齐到设备像素，任何缩放下都不糊、不留缝。
+// edits: [[行, 列, 字符], ...] 临时改格子（眨眼、表情、抬手）；offset(行, 列) → [dx, dy] 按格挪动部分身体（呼吸）
+function pixels(sp, x, y, o = {}) {
+  const c = o.cell ?? 10, pal = o.palette ? { ...sp.palette, ...o.palette } : sp.palette;
+  let grid = sp.rows;
+  if (o.edits && o.edits.length) {
+    grid = sp.rows.map(r => r.slice());
+    for (const [r, col, ch] of o.edits) if (r >= 0 && col >= 0) (grid[r] || (grid[r] = []))[col] = ch;
+  }
+  const w = sp.w * c, h = sp.h * c, anchor = o.anchor || 'bottom';
+  const left = anchor === 'top-left' ? x : x - w / 2, top = anchor === 'bottom' ? y - h : anchor === 'center' ? y - h / 2 : y;
+  const rank = o.reveal != null && o.reveal < 1 ? revealRank(sp, o.seed ?? 1) : null;
+  const m = ctx.getTransform(), X = v => Math.round(m.a * v + m.e), Y = v => Math.round(m.d * v + m.f);
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1; ctx.setTransform(1, 0, 0, 1, 0, 0);
+  for (let r = 0; r < grid.length; r++) for (let col = 0; col < grid[r].length; col++) {
+    const ch = grid[r][col];
+    if (!ch || ch === '.' || ch === ' ' || !pal[ch]) continue;
+    if (rank && (rank[r * sp.w + col] || 0) > o.reveal) continue;
+    const [dx, dy] = (o.offset && o.offset(r, col)) || [0, 0];
+    const x0 = left + ((o.flip ? sp.w - 1 - col : col) + dx) * c, y0 = top + (r + dy) * c, px = X(x0), py = Y(y0);
+    ctx.fillStyle = pal[ch]; ctx.fillRect(px, py, X(x0 + c) - px, Y(y0 + c) - py);
   }
   ctx.restore();
-}
-function stars(t, o = {}) {
-  const n = o.count || 260, r = rng(o.seed || 7), speed = o.speed ?? 6, a = o.alpha ?? 1;
-  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = o.color || '#dfe9ff';
-  for (let i = 0; i < n; i++) {
-    const depth = .3 + .7 * r(), x = ((r() * W + t * speed * depth) % W + W) % W, y = r() * H;
-    const tw = .55 + .45 * Math.sin(t * (1 + 2 * r()) + i), s = (o.size || 2.2) * depth;
-    ctx.globalAlpha = a * depth * tw; ctx.fillRect(x, y, s, s);
-  }
-  ctx.restore();
-}
-const pointCache = new Map();
-// 把文字栅格化后采样成点阵，坐标以文字中心为原点（设计单位）
-function textPoints(str, o = {}) {
-  const size = o.size || 200, step = o.step || Math.max(3, size / 45), key = `${str}|${size}|${step}|${o.font}|${o.weight}`;
-  if (pointCache.has(key)) return pointCache.get(key);
-  const c = document.createElement('canvas'), g = c.getContext('2d', { willReadFrequently: true });
-  g.font = `${o.weight || 900} ${size}px ${o.font || FONT.serif}`;
-  const w = Math.ceil(g.measureText(str).width + size * .4), h = Math.ceil(size * 1.6);
-  c.width = w; c.height = h;
-  g.font = `${o.weight || 900} ${size}px ${o.font || FONT.serif}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
-  g.fillText(str, w / 2, h / 2);
-  const data = g.getImageData(0, 0, w, h).data, pts = [], r = rng(size + str.length);
-  for (let y = 0; y < h; y += step) for (let x = 0; x < w; x += step) {
-    const jx = x + (r() - .5) * step * .6, jy = y + (r() - .5) * step * .6;
-    if (data[(Math.floor(clamp(jy, 0, h - 1)) * w + Math.floor(clamp(jx, 0, w - 1))) * 4 + 3] > 128) pts.push({ x: jx - w / 2, y: jy - h / 2 });
-  }
-  pointCache.set(key, pts);
-  return pts;
-}
-function shapePoints(kind, n = 600, o = {}) {
-  const r = rng(o.seed || 3), R = o.r || 300, pts = [];
-  for (let i = 0; i < n; i++) {
-    const u = i / n;
-    if (kind === 'ring') { const a = u * TAU; pts.push({ x: Math.cos(a) * R, y: Math.sin(a) * R }); }
-    else if (kind === 'spiral') { const a = u * TAU * 6, rr = R * Math.sqrt(u); pts.push({ x: Math.cos(a) * rr, y: Math.sin(a) * rr }); }
-    else if (kind === 'disc') { const a = r() * TAU, rr = R * Math.sqrt(r()); pts.push({ x: Math.cos(a) * rr, y: Math.sin(a) * rr }); }
-    else throw new Error(`unknown shape "${kind}"; use ring, spiral or disc`);
-  }
-  return pts;
-}
-// 粒子从散开处飞入目标点阵；t 为开始后的秒数，reverse 为炸散
-function assemble(points, t, o = {}) {
-  if (t < 0) return;
-  const x0 = o.x ?? W / 2, y0 = o.y ?? H / 2, dur = o.dur ?? 1.6, stagger = o.stagger ?? .8, spread = o.spread ?? W * .7;
-  const size = o.size ?? 2.4, r = rng(o.seed || 11), color = o.color || '#ffffff';
-  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = color;
-  for (const p of points) {
-    // 每个粒子的随机量一次取完，跳过不可见粒子时后面粒子的随机序列才不会错位
-    const delay = r() * stagger, a = r() * TAU, d = spread * (.35 + .65 * r()), w = r() - .5, sx = Math.cos(a) * d, sy = Math.sin(a) * d;
-    let k = ease.inOut(progress(t, delay, dur));
-    if (o.reverse) k = 1 - k;
-    if (k <= 0) continue;
-    const wob = Math.sin(k * PI) * 40 * w;
-    const px = lerp(sx, p.x, k) + wob, py = lerp(sy, p.y, k) - wob, s = size * (1.8 - .8 * k);
-    ctx.globalAlpha = (o.alpha ?? 1) * clamp(k * 3) * (.45 + .55 * k);
-    ctx.fillRect(x0 + px - s / 2, y0 + py - s / 2, s, s);
-  }
-  ctx.restore();
-}
-function rot3(p, yaw = 0, pitch = 0, roll = 0) {
-  let [x, y, z] = p;
-  let c = Math.cos(yaw), s = Math.sin(yaw); [x, z] = [c * x + s * z, -s * x + c * z];
-  c = Math.cos(pitch); s = Math.sin(pitch); [y, z] = [c * y - s * z, s * y + c * z];
-  c = Math.cos(roll); s = Math.sin(roll); [x, y] = [c * x - s * y, s * x + c * y];
-  return [x, y, z];
-}
-// 透视投影：世界单位 → 屏幕设计单位；k 是透视缩放，用于点大小与景深透明度
-function project(p, cam = {}) {
-  const [x, y, z] = rot3(p, cam.yaw, cam.pitch, cam.roll), dist = cam.dist ?? 6, f = cam.f ?? Math.min(W, H) * .9;
-  const k = f / (dist + z);
-  return { x: (cam.x ?? W / 2) + x * k, y: (cam.y ?? H / 2) - y * k, k, z };
-}
-const POLY = (() => {
-  const g = (1 + Math.sqrt(5)) / 2, edges = (v, len) => {
-    const e = []; for (let i = 0; i < v.length; i++) for (let j = i + 1; j < v.length; j++) if (Math.abs(Math.hypot(...v[i].map((c, k) => c - v[j][k])) - len) < 1e-3) e.push([i, j]); return e;
-  };
-  const make = (v, len) => { const s = 1 / Math.max(...v.map(p => Math.hypot(...p))); const vs = v.map(p => p.map(c => c * s)); return { vertices: vs, edges: edges(v, len) }; };
-  const ico = []; for (const a of [-1, 1]) for (const b of [-g, g]) ico.push([0, a, b], [a, b, 0], [b, 0, a]);
-  const cube = []; for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) cube.push([a, b, c]);
-  return {
-    tetra: make([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]], Math.sqrt(8)),
-    cube: make(cube, 2),
-    octa: make([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], Math.SQRT2),
-    icosa: make(ico, 2),
-  };
-})();
-// 线框多面体：近处的棱更亮更粗，顶点带光点
-function wire(shape, cam = {}, o = {}) {
-  const sc = o.scale ?? 1;
-  if (!(sc > 0)) return [];                                     // 缩放为 0 时（常见于从无到有地长出来）什么都不画
-  const pts = shape.vertices.map(v => project(v.map(c => c * sc), cam)), a = o.alpha ?? 1, color = o.color || '#bfe3ff';
-  const near = p => clamp(.5 - p.z / (2 * sc)), k0 = (cam.f ?? Math.min(W, H) * .9) / (cam.dist ?? 6);
-  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = color; ctx.lineCap = 'round';
-  for (const [i, j] of shape.edges) {
-    const depth = .3 + .7 * (near(pts[i]) + near(pts[j])) / 2;
-    ctx.globalAlpha = a * depth; ctx.lineWidth = (o.width || 2.2) * (.6 + .6 * depth);
-    ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(pts[j].x, pts[j].y); ctx.stroke();
-  }
-  ctx.restore();
-  if (o.nodes !== false) for (const p of pts) glow(p.x, p.y, (o.nodeSize || 26) * p.k / k0, color, a * (.4 + .6 * near(p)));
-  return pts;
+  return { x: left, y: top, w, h };
 }
 
-// ------------------------------------------------------------------ WebGL：背景与后期
-const gl = (() => {
-  const c = document.createElement('canvas');
-  const g = c.getContext('webgl2', { preserveDrawingBuffer: true, antialias: false, alpha: false, premultipliedAlpha: false });
-  if (!g) return null;
-  g.halfFloat = !!g.getExtension('EXT_color_buffer_float') || !!g.getExtension('EXT_color_buffer_half_float');
-  return g;
-})();
-const VS = `#version 300 es
-in vec2 p; out vec2 uv; void main(){ uv = p * .5 + .5; gl_Position = vec4(p, 0., 1.); }`;
-const HEAD = `#version 300 es
-precision highp float;
-in vec2 uv; out vec4 o;
-// 整数哈希：浮点 fract 哈希在大坐标下精度不足，颗粒会排成竖条
-float hash(vec2 p){ uvec2 q = uvec2(ivec2(floor(p)) + 32768) * uvec2(1597334673u, 3812015801u);
-  uint n = (q.x ^ q.y) * 1597334673u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13; return float(n) * (1. / 4294967295.); }
-float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
-  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y); }
-float fbm(vec2 p){ float s = 0., a = .5; for (int i = 0; i < 5; i++){ s += a * noise(p); p = p * 2.03 + vec2(3.1, 1.7); a *= .5; } return s; }
-`;
-const FS_BACKDROP = HEAD + `
-uniform int kind; uniform float time, amount, speed, aspect; uniform vec3 tint, tint2;
-vec3 nebula(vec2 p){
-  float t = time * .03 * speed;
-  vec2 q = vec2(fbm(p * 1.2 + t), fbm(p * 1.2 + vec2(5.2, 1.3) - t));
-  float n = fbm(p * 1.2 + 2.2 * q + vec2(t * 1.5, 0.));
-  vec3 c = vec3(.006, .008, .02);
-  c += tint * smoothstep(.38, 1.02, n) * 1.5;
-  c += tint2 * .55 * pow(clamp(q.y - .22, 0., 1.), 2.4);
-  float h = hash(floor(gl_FragCoord.xy));
-  c += vec3(.85, .9, 1.) * step(.9975, h) * (.5 + .5 * sin(time * 2. + h * 400.));
-  return c;
+// ------------------------------------------------------------------ 声音：按事件逐样本合成单声道音轨
+const RATE = 44100;
+const SEMI = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const accidental = s => s === '#' ? 1 : s === 'b' ? -1 : 0;
+function noteHz(name) {
+  if (typeof name === 'number') return name;
+  const m = /^([A-G])([#b]?)(-?\d)$/.exec(String(name));
+  if (!m) throw new Error(`unknown note "${name}"; write it like "E5" or "F#4"`);
+  return 440 * 2 ** ((SEMI[m[1]] + accidental(m[2]) - 9) / 12 + (+m[3] - 4));
 }
-vec3 aurora(vec2 p){
-  vec3 c = vec3(.004, .008, .018) + tint2 * .06 * (1. - uv.y);
-  for (int i = 0; i < 3; i++){
-    float fi = float(i), x = p.x * 1.1 + fi * 1.9;
-    float w = sin(x * 1.4 + time * .22 * speed + fi * 2.) * .16 + (fbm(vec2(x * .7, time * .04 * speed + fi)) - .5) * .5;
-    float d = p.y - .12 - w + fi * .1;
-    float band = exp(-d * d * 22.) * (d > 0. ? 1. : exp(d * 6.));
-    float streak = .45 + .55 * fbm(vec2(x * 9., time * .15 * speed + fi));
-    c += mix(tint, tint2, fi * .5) * band * streak * .6;
+const midiHz = n => 440 * 2 ** ((n - 69) / 12);
+const QUALITIES = {
+  '': [0, 4, 7], m: [0, 3, 7], 5: [0, 7], sus2: [0, 2, 7], sus4: [0, 5, 7], dim: [0, 3, 6], aug: [0, 4, 8],
+  6: [0, 4, 7, 9], m6: [0, 3, 7, 9], 7: [0, 4, 7, 10], maj7: [0, 4, 7, 11], m7: [0, 3, 7, 10],
+  add9: [0, 4, 7, 14], madd9: [0, 3, 7, 14], 9: [0, 4, 7, 10, 14], maj9: [0, 4, 7, 11, 14], m9: [0, 3, 7, 10, 14],
+};
+function chordNotes(name) {
+  const m = /^([A-G])([#b]?)(.*)$/.exec(String(name)), q = m && QUALITIES[m[3]];
+  if (!q) throw new Error(`unknown chord "${name}"; use a root A–G, optional # or b, and one of: major (no suffix), ${Object.keys(QUALITIES).filter(Boolean).join(', ')}`);
+  return q.map(i => SEMI[m[1]] + accidental(m[2]) + i);
+}
+const WAVES = {
+  sine: p => Math.sin(p),
+  triangle: p => 2 / PI * Math.asin(Math.sin(p)),
+  square: p => Math.tanh(3 * Math.sin(p)),                       // 圆一点的方波，短音不刺耳
+};
+function tone(buf, t, dur, f0, o = {}) {
+  const wave = WAVES[o.wave || 'sine'], gain = o.gain ?? .2, f1 = o.to ?? f0, attack = o.attack ?? .004, shape = o.decay ?? 'exp';
+  const i0 = Math.max(0, Math.round(t * RATE)), i1 = Math.min(buf.length, Math.round((t + dur) * RATE));
+  let phase = 0;
+  for (let i = i0; i < i1; i++) {
+    const x = i / RATE - t, k = x / dur, f = f1 === f0 ? f0 : f0 * (f1 / f0) ** k;
+    phase += TAU * f / RATE;
+    const env = Math.min(1, x / attack) * (shape === 'exp' ? Math.exp(-5 * k) : shape === 'pad' ? Math.min(1, (dur - x) / .5) : Math.min(1, (1 - k) * 8));
+    buf[i] += gain * env * wave(phase);
   }
-  float h = hash(floor(gl_FragCoord.xy));
-  c += vec3(.8, .9, 1.) * step(.998, h) * smoothstep(-.1, .4, p.y) * .7;
-  return c;
 }
-vec3 grid(vec2 p){
-  float hz = -.06;
-  vec3 c = vec3(.008, .006, .018) + tint2 * .3 * exp(-abs(p.y - hz) * 7.) + tint2 * .05 * smoothstep(hz, .5, p.y);
-  if (p.y < hz){
-    float z = .3 / (hz - p.y), x = p.x * z, zz = z + time * speed * .5;
-    vec2 g = vec2(x, zz), f = abs(fract(g) - .5), w = fwidth(g) * 1.2;
-    float line = max(1. - smoothstep(0., w.x, .5 - f.x), 1. - smoothstep(0., w.y, .5 - f.y));
-    c += tint * line * exp(-z * .12) * 1.2;
-  } else {
-    float h = hash(floor(gl_FragCoord.xy));
-    c += vec3(.8, .85, 1.) * step(.9982, h) * .8;
+function hiss(buf, t, dur, o = {}) {
+  const gain = o.gain ?? .2, rand = rng(o.seed ?? Math.round(t * 997) + 1), bright = o.bright ?? .5;
+  const i0 = Math.max(0, Math.round(t * RATE)), i1 = Math.min(buf.length, Math.round((t + dur) * RATE));
+  let low = 0;
+  for (let i = i0; i < i1; i++) {
+    const k = (i / RATE - t) / dur, cut = typeof o.cutoff === 'function' ? o.cutoff(k) : o.cutoff ?? .25;
+    const white = rand() * 2 - 1; low += (white - low) * cut;
+    const env = Math.min(1, (i / RATE - t) / .002) * (o.decay === 'hold' ? Math.min(1, (1 - k) * 6) : o.decay === 'swell' ? Math.sin(PI * k) : Math.exp(-6 * k));
+    buf[i] += gain * env * (white * bright + low * (1 - bright));
   }
-  return c;
 }
-vec3 silk(vec2 p){
-  float t = time * .05 * speed;
-  float n = fbm(p * .9 + vec2(t, -t * .7));
-  float w = sin((p.x * 1.1 + p.y * 1.9 + n * 3.2 + t * 2.) * 2.1);
-  vec3 c = mix(tint2 * .12, tint * .85, pow(w * .5 + .5, 3.));
-  c += tint * .3 * pow(1. - abs(w), 10.);
-  return c * (.55 + .45 * smoothstep(1.2, 0., length(p)));
-}
-void main(){
-  vec2 p = (uv - .5) * vec2(aspect, 1.);
-  vec3 c = kind == 1 ? nebula(p) : kind == 2 ? aurora(p) : kind == 3 ? grid(p) : silk(p);
-  o = vec4(c * amount, 1.);
-}`;
-const FS_ACCUM = HEAD + `uniform sampler2D src; uniform float weight; void main(){ o = vec4(texture(src, uv).rgb * weight, 1.); }`;
-const FS_BRIGHT = HEAD + `uniform sampler2D src; uniform vec2 texel; uniform float threshold;
-void main(){
-  vec3 c = .25 * (texture(src, uv + texel * vec2(-1, -1)).rgb + texture(src, uv + texel * vec2(1, -1)).rgb + texture(src, uv + texel * vec2(-1, 1)).rgb + texture(src, uv + texel).rgb);
-  float l = max(c.r, max(c.g, c.b));
-  o = vec4(c * smoothstep(threshold, threshold + .35, l), 1.);
-}`;
-const FS_DOWN = HEAD + `uniform sampler2D src; uniform vec2 texel;
-void main(){
-  vec3 s = texture(src, uv).rgb * 4.;
-  s += texture(src, uv - texel).rgb + texture(src, uv + texel).rgb + texture(src, uv + vec2(texel.x, -texel.y)).rgb + texture(src, uv - vec2(texel.x, -texel.y)).rgb;
-  o = vec4(s / 8., 1.);
-}`;
-const FS_UP = HEAD + `uniform sampler2D src; uniform vec2 texel;
-void main(){
-  vec3 s = texture(src, uv + vec2(-texel.x * 2., 0.)).rgb + texture(src, uv + vec2(texel.x * 2., 0.)).rgb
-    + texture(src, uv + vec2(0., -texel.y * 2.)).rgb + texture(src, uv + vec2(0., texel.y * 2.)).rgb;
-  s += (texture(src, uv + texel).rgb + texture(src, uv - texel).rgb + texture(src, uv + vec2(texel.x, -texel.y)).rgb + texture(src, uv - vec2(texel.x, -texel.y)).rgb) * 2.;
-  o = vec4(s / 12., 1.);
-}`;
-const FS_COMPOSE = HEAD + `uniform sampler2D src, bloomTex; uniform float bloom, grain, vignette, sat, contrast, exposure, frame, aspect, aberration;
-uniform vec3 lift, gain;
-void main(){
-  vec2 d = uv - .5;
-  float ab = aberration * dot(d, d);
-  vec3 c = vec3(texture(src, uv - d * ab).r, texture(src, uv).g, texture(src, uv + d * ab).b);
-  c += texture(bloomTex, uv).rgb * bloom;
-  c = mix(c, .8 + .2 * (1. - exp(-(c - .8) / .2)), step(.8, c));        // 高光柔和压缩，避免泛光叠加后硬截断
-  c = gain * (c + lift * (1. - c));
-  float l = dot(c, vec3(.2126, .7152, .0722));
-  c = mix(vec3(l), c, sat);
-  c = mix(c, c * c * (3. - 2. * c), contrast - 1.);
-  float r = length(d * vec2(aspect, 1.)) / length(vec2(aspect, 1.) * .5);
-  c *= 1. - vignette * .55 * pow(r, 2.4);
-  c *= exposure;
-  c += (hash(gl_FragCoord.xy + frame * vec2(17.3, 41.9)) - .5) * grain * .09 * (1. - l * .6);
-  o = vec4(clamp(c, 0., 1.), 1.);
-}`;
-
-const GL = {};
-function glInit() {
-  if (!gl) return false;
-  const compile = (type, src) => {
-    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s));
-    return s;
-  };
-  const vs = compile(gl.VERTEX_SHADER, VS);
-  const program = fs => {
-    const p = gl.createProgram(); gl.attachShader(p, vs); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
-    gl.bindAttribLocation(p, 0, 'p'); gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('program: ' + gl.getProgramInfoLog(p));
-    const u = {}, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
-    for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
-    return { p, u };
-  };
-  GL.backdrop = program(FS_BACKDROP); GL.accum = program(FS_ACCUM); GL.bright = program(FS_BRIGHT);
-  GL.down = program(FS_DOWN); GL.up = program(FS_UP); GL.compose = program(FS_COMPOSE);
-  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-  GL.layerTex = texture(1, 1, false);
-  return true;
-}
-function texture(w, h, float) {
-  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
-  const hf = float && gl.halfFloat;
-  gl.texImage2D(gl.TEXTURE_2D, 0, hf ? gl.RGBA16F : gl.RGBA8, w, h, 0, gl.RGBA, hf ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, null);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  return t;
-}
-function target(w, h) {
-  const tex = texture(w, h, true), fbo = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-  return { tex, fbo, w, h };
-}
-function glResize(w, h) {
-  gl.canvas.width = w; gl.canvas.height = h;
-  for (const k of ['acc', ...[0, 1, 2, 3, 4].map(i => 'b' + i)]) if (GL[k]) { gl.deleteTexture(GL[k].tex); gl.deleteFramebuffer(GL[k].fbo); }
-  GL.acc = target(w, h);
-  for (let i = 0, d = 2; i < 5; i++, d *= 2) GL['b' + i] = target(Math.max(1, Math.round(w / d)), Math.max(1, Math.round(h / d)));
-}
-function pass(prog, dst, uniforms, w, h) {
-  gl.useProgram(prog.p);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fbo : null);
-  gl.viewport(0, 0, w ?? dst.w, h ?? dst.h);
-  let unit = 0;
-  for (const [k, v] of Object.entries(uniforms)) {
-    const loc = prog.u[k]; if (loc == null) continue;
-    if (v instanceof WebGLTexture) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, v); gl.uniform1i(loc, unit++); }
-    else if (k === 'kind') gl.uniform1i(loc, v);
-    else if (Array.isArray(v)) gl[`uniform${v.length}fv`](loc, v);
-    else gl.uniform1f(loc, v);
+const SOUNDS = {
+  tick: (b, t, o) => hiss(b, t, o.dur ?? .015, { gain: .5 * (o.gain ?? 1), bright: .9 }),
+  key: (b, t, o) => hiss(b, t, .03, { gain: .3 * (o.gain ?? 1), bright: .4, cutoff: .5 }),
+  click: (b, t, o) => { hiss(b, t, .012, { gain: .4 * (o.gain ?? 1), bright: .9 }); tone(b, t, .03, 1800, { gain: .1 * (o.gain ?? 1) }); },
+  pop: (b, t, o) => tone(b, t, o.dur ?? .08, 640, { to: 280, gain: .35 * (o.gain ?? 1) }),
+  blip: (b, t, o) => tone(b, t, o.dur ?? .06, noteHz(o.note ?? 'E5'), { wave: 'square', gain: .14 * (o.gain ?? 1) }),
+  chime: (b, t, o) => { const f = noteHz(o.note ?? 'G5'), d = o.dur ?? 1.4; tone(b, t, d, f, { gain: .2 * (o.gain ?? 1) }); tone(b, t, d * .5, f * 2.76, { gain: .05 * (o.gain ?? 1) }); },
+  ding: (b, t, o) => { tone(b, t, .14, noteHz('E6'), { wave: 'triangle', gain: .18 * (o.gain ?? 1) }); tone(b, t + .09, .3, noteHz('G6'), { wave: 'triangle', gain: .18 * (o.gain ?? 1) }); },
+  success: (b, t, o) => ['C5', 'E5', 'G5', 'C6'].forEach((n, i) => tone(b, t + i * .08, .24, noteHz(n), { wave: 'triangle', gain: .16 * (o.gain ?? 1) })),
+  sad: (b, t, o) => { tone(b, t, .2, noteHz('E4'), { wave: 'square', gain: .1 * (o.gain ?? 1), decay: 'hold' }); tone(b, t + .22, .34, noteHz('C4'), { wave: 'square', gain: .1 * (o.gain ?? 1) }); },
+  drop: (b, t, o) => tone(b, t, o.dur ?? .14, noteHz(o.note ?? 'G4'), { to: noteHz(o.to ?? 'C4'), wave: 'triangle', gain: .2 * (o.gain ?? 1), decay: 'hold' }),
+  rise: (b, t, o) => tone(b, t, o.dur ?? .1, noteHz(o.note ?? 'C5'), { to: noteHz(o.to ?? 'C6'), wave: 'triangle', gain: .2 * (o.gain ?? 1), decay: 'hold' }),
+  thump: (b, t, o) => tone(b, t, o.dur ?? .3, 64, { to: 46, gain: .6 * (o.gain ?? 1) }),
+  whoosh: (b, t, o) => hiss(b, t, o.dur ?? .45, { gain: .25 * (o.gain ?? 1), bright: 0, cutoff: k => .03 + .25 * Math.sin(PI * k), decay: 'swell' }),
+  scratch: (b, t, o) => hiss(b, t, o.dur ?? .09, { gain: .2 * (o.gain ?? 1), bright: .2, cutoff: .35, decay: 'hold' }),
+  tone: (b, t, o) => tone(b, t, o.dur ?? .3, noteHz(o.note ?? 'A4'), { wave: o.wave ?? 'sine', to: o.to == null ? undefined : noteHz(o.to), gain: .2 * (o.gain ?? 1) }),
+};
+const VOICE_TONES = {
+  square: (b, t, f, g) => tone(b, t, .045, f, { wave: 'square', gain: .09 * g }),
+  triangle: (b, t, f, g) => tone(b, t, .05, f, { wave: 'triangle', gain: .15 * g }),
+  sine: (b, t, f, g) => tone(b, t, .06, f, { gain: .17 * g }),
+  key: (b, t, f, g) => hiss(b, t, .022, { gain: .2 * g, bright: .6 }),
+  none: () => {},
+};
+const PAUSE = /[\s\p{P}\p{S}]/u;
+function speech(buf) {
+  for (const l of LINES) {
+    if (l.silent) continue;
+    const v = FILM.voices[l.who], play = VOICE_TONES[v.tone || 'square'], g = v.gain ?? 1;
+    const notes = (v.notes || ['C5', 'D5', 'E5', 'G5', 'A5']).map(noteHz);
+    l.chars.forEach((ch, i) => { if (!PAUSE.test(ch)) play(buf, l.start + i / l.cps, notes[ch.codePointAt(0) % notes.length], g); });
   }
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// 背景音乐：小节网格从 0 开始；每小节由它开头所在的、写了 music 的最近场景决定和弦与能量
+function music(buf) {
+  const m = FILM.music;
+  if (!m) return;
+  const bar = 240 / (m.bpm ?? 90), g = m.gain ?? 1;
+  for (let k = 0; k * bar < DURATION - .1; k++) {
+    const t0 = k * bar;
+    let owner = null;
+    for (const sc of SCENES) if (sc.music !== undefined && sc.start <= t0 + .05) owner = sc;
+    const set = { chords: m.chords || ['C'], energy: m.energy ?? 1, ...(owner && owner.music ? owner.music : {}) };
+    if (owner && owner.music === false) set.energy = 0;
+    if (!(set.energy > 0)) continue;
+    const first = owner ? Math.ceil((owner.start - .05) / bar) : 0;
+    const notes = chordNotes(set.chords[(k - first) % set.chords.length]);
+    // 根音放在 C3 附近，其余音往上排，高过 G4 的降一个八度
+    const midi = notes.map((s, j) => { let n = 48 + s; if (j && n > 67) n -= 12; return n; });
+    for (const n of midi) {
+      tone(buf, t0, bar + .5, midiHz(n), { gain: .02 * g, attack: .45, decay: 'pad' });
+      tone(buf, t0, bar + .5, midiHz(n) * 1.004, { wave: 'triangle', gain: .012 * g, attack: .45, decay: 'pad' });
+    }
+    tone(buf, t0, 1.6, midiHz(midi[0] + 24), { gain: .045 * g });
+    if (set.energy >= 2) for (let e = 0; e < 8; e++) tone(buf, t0 + e * bar / 8, .28, midiHz(midi[e % midi.length] + 24), { wave: 'triangle', gain: .026 * g });
+  }
+}
+function soundtrack() {
+  const buf = new Float32Array(Math.ceil(DURATION * RATE));
+  music(buf); speech(buf);
+  for (const c of CUES) SOUNDS[c.name](buf, c.t, c);
+  // 按有声部分的均方根把响度拉到约 −18 dBFS，再软限幅：叠在一起时圆滑压住，不会削波；结尾淡出
+  let sum = 0, n = 0;
+  for (const x of buf) if (Math.abs(x) > 1e-3) { sum += x * x; n++; }
+  const gain = n ? clamp(.12 / Math.sqrt(sum / n), .5, 6) : 1, tail = Math.min(buf.length, Math.round(.8 * RATE));
+  for (let i = 0; i < buf.length; i++) buf[i] = Math.tanh(buf[i] * gain) * .95 * Math.min(1, (buf.length - i) / tail);
+  return buf;
+}
+function wav(samples) {
+  const n = samples.length, bytes = new Uint8Array(44 + n * 2), v = new DataView(bytes.buffer);
+  const tag = (at, s) => [...s].forEach((ch, i) => v.setUint8(at + i, ch.charCodeAt(0)));
+  tag(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); tag(8, 'WAVE'); tag(12, 'fmt '); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, RATE, true); v.setUint32(28, RATE * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); tag(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, clamp(samples[i], -1, 1) * 32767, true);
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 32768) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 32768));
+  return btoa(s);
 }
 
 // ------------------------------------------------------------------ 画面管线
 const view = document.createElement('canvas');
-const sctx = view.getContext('2d');
-const layer = document.createElement('canvas');
-const lctx = layer.getContext('2d');
-const bg = document.createElement('canvas');
-const bgctx = bg.getContext('2d');
-let hasGL = false;
+const vctx = view.getContext('2d');
+let ctx = vctx;
 
 function setScale(s) {
   PIXEL.scale = s;
   const w = Math.round(W * s), h = Math.round(H * s);
-  if (view.width === w && view.height === h) return;
-  view.width = layer.width = w; view.height = layer.height = h;
-  bg.width = Math.max(1, Math.round(w / 2)); bg.height = Math.max(1, Math.round(h / 2));
-  if (hasGL) glResize(w, h);
+  if (view.width !== w || view.height !== h) { view.width = w; view.height = h; }
 }
-function layout() {
-  if (!SCENES.length) throw new Error('the film has no scenes');
-  let t = 0;
-  for (const s of SCENES) {
-    s.t0 = t; s.d = s.bars * BAR; t += s.d;
-    s.hitList = (s.hits || []).map(([at, k = 1]) => [s.t0 + at, k]);
-  }
-  DURATION = t + (FILM.tail ?? 2);
-}
-const sceneAt = T => { let sc = SCENES[0]; for (const s of SCENES) if (T >= s.t0) sc = s; return sc; };
-const resolve = (v, t, d) => typeof v === 'function' ? v(t, d) : v;
-
-function camera(sc, t) {
-  const d = sc.d, c = sc.camera ?? 'push', p = clamp(t / d);
-  if (typeof c === 'function') return { x: 0, y: 0, z: 1, r: 0, ...c(t, d) };
-  if (c === 'still') return { x: 0, y: 0, z: 1, r: 0 };
-  const drift = { x: 10 * Math.sin(t * .21), y: 6 * Math.sin(t * .17 + 1), r: 0 };
-  if (c === 'push') return { ...drift, z: 1 + .045 * p };
-  if (c === 'pull') return { ...drift, z: 1.05 - .045 * p };
-  if (c === 'arc') return { ...drift, z: 1 + .04 * Math.sin(PI * p) };
-  if (c === 'drift') return { ...drift, z: 1.02 };
-  throw new Error(`${sc.name}: unknown camera "${c}"`);
-}
-function shakeAt(T) {
-  let s = 0;
-  for (const sc of SCENES) for (const [th, k] of sc.hitList) if (T >= th && T < th + 1.5) s += 16 * k * Math.exp(-(T - th) * 6);
-  return s;
-}
-function flashAt(T) {
-  let f = 0;
-  for (const sc of SCENES) for (const [th, k] of sc.hitList) if (T >= th && T < th + 1.5) f += .75 * k * Math.exp(-(T - th) * 5);
-  return Math.min(.9, f);
-}
+const sceneAt = T => { let sc = SCENES[0]; for (const s of SCENES) if (T >= s.start) sc = s; return sc; };
 function sceneFade(sc, lt) {
-  const [fi, fo] = sc.fade ?? [.35, .35];
+  const [fi, fo] = sc.fade ?? [0, 0];
   return (fi > 0 ? smooth(0, fi, lt) : 1) * (fo > 0 ? 1 - smooth(sc.d - fo, sc.d, lt) : 1);
 }
-
-// 背景每帧只算一次（运动模糊的子帧共用），在半分辨率下渲染后放大
-function renderBackdrop(sc, lt) {
-  const spec = resolve(sc.backdrop, lt, sc.d);
-  if (!spec) return false;
-  const o = typeof spec === 'string' ? { kind: spec } : spec;
-  if (!BACKDROPS[o.kind]) throw new Error(`${sc.name}: unknown backdrop "${o.kind}"; use ${Object.keys(BACKDROPS).join(', ')}`);
-  const defaults = { nebula: ['#2a4bd7', '#b0408f'], aurora: ['#2be0a8', '#5a4bff'], grid: ['#ff3fb4', '#6a3cff'], silk: ['#4f7cff', '#0b1230'] }[o.kind];
-  if (!hasGL) { bgctx.fillStyle = rgba(o.tint2 || defaults[1], .25); bgctx.fillRect(0, 0, bg.width, bg.height); return true; }
-  pass(GL.backdrop, null, {
-    kind: BACKDROPS[o.kind], time: (o.time ?? lt) + (o.seed || 0) * 37, amount: o.amount ?? 1, speed: o.speed ?? 1, aspect: W / H,
-    tint: hexRGB(o.tint || defaults[0]), tint2: hexRGB(o.tint2 || defaults[1]),
-  }, bg.width, bg.height);
-  bgctx.drawImage(gl.canvas, 0, gl.canvas.height - bg.height, bg.width, bg.height, 0, 0, bg.width, bg.height);
-  return true;
-}
-function drawLayer(sc, T, withBackdrop, jitter = [0, 0]) {
-  const lt = T - sc.t0, s = PIXEL.scale;
-  ctx = lctx;
-  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none'; ctx.shadowBlur = 0;
-  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, layer.width, layer.height);
-  if (withBackdrop) ctx.drawImage(bg, 0, 0, layer.width, layer.height);
-  const cam = camera(sc, lt), sh = shakeAt(T);
+function drawScene(sc, T) {
+  const lt = T - sc.start, s = PIXEL.scale;
+  ctx = vctx;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'; ctx.setLineDash([]);
+  ctx.fillStyle = sc.bg || FILM.bg; ctx.fillRect(0, 0, view.width, view.height);
   ctx.setTransform(s, 0, 0, s, 0, 0);
-  ctx.translate(W / 2 + jitter[0] + cam.x + (sh > .3 ? Math.sin(T * 91) * sh : 0), H / 2 + jitter[1] + cam.y + (sh > .3 ? Math.cos(T * 73) * sh : 0));
-  ctx.rotate(cam.r || 0); ctx.scale(cam.z, cam.z); ctx.translate(-W / 2, -H / 2);
+  if (sc.camera) {
+    const cam = { x: 0, y: 0, z: 1, ...sc.camera(lt, sc.d) };
+    ctx.translate(W / 2 + cam.x, H / 2 + cam.y); ctx.scale(cam.z, cam.z); ctx.translate(-W / 2, -H / 2);
+  }
   ctx.save();
   try { sc.draw(lt, sc.d, T); }
   catch (e) {
@@ -607,117 +541,48 @@ function drawLayer(sc, T, withBackdrop, jitter = [0, 0]) {
   }
   finally { ctx.restore(); }
 }
-const JITTER = [[0, 0], [.25, -.25], [-.25, .25], [.375, .125], [-.125, -.375], [.125, .375], [-.375, -.125], [0, .5]];
-let frameNo = 0;
-function renderFrame(T, samples = 1, fps = 30) {
+function renderFrame(T) {
   T = clamp(T, 0, DURATION - 1e-4);
-  const sc = sceneAt(T), lt = T - sc.t0, K = Math.max(1, Math.min(8, samples > 1 ? (sc.blur ?? samples) : 1));
-  const withBackdrop = renderBackdrop(sc, lt);
-  const grade = { ...GRADES[FILM.grade] };
-  for (const k of ['bloom', 'grain', 'vignette']) if (FILM[k] != null) grade[k] = FILM[k];
-  if (sc.grade) Object.assign(grade, sc.grade);
-  const exposure = sceneFade(sc, lt);
-  if (hasGL) {
-    gl.disable(gl.BLEND);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    for (let k = 0; k < K; k++) {
-      let tk = K > 1 ? T + ((k + .5) / K - .5) * .5 / fps : T;
-      if (sceneAt(tk) !== sc || tk < 0) tk = T;
-      drawLayer(sc, tk, withBackdrop, K > 1 ? JITTER[k] : [0, 0]);
-      gl.bindTexture(gl.TEXTURE_2D, GL.layerTex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, layer);
-      if (k === 1) { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
-      pass(GL.accum, GL.acc, { src: GL.layerTex, weight: 1 / K });
-    }
-    gl.disable(gl.BLEND);
-    const b = [0, 1, 2, 3, 4].map(i => GL['b' + i]);
-    pass(GL.bright, b[0], { src: GL.acc.tex, texel: [1 / GL.acc.w, 1 / GL.acc.h], threshold: grade.threshold ?? .62 });
-    for (let i = 1; i < 5; i++) pass(GL.down, b[i], { src: b[i - 1].tex, texel: [1 / b[i - 1].w, 1 / b[i - 1].h] });
-    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
-    for (let i = 3; i >= 0; i--) pass(GL.up, b[i], { src: b[i + 1].tex, texel: [.5 / b[i + 1].w, .5 / b[i + 1].h] });
-    gl.disable(gl.BLEND);
-    pass(GL.compose, null, {
-      src: GL.acc.tex, bloomTex: b[0].tex, bloom: grade.bloom, grain: grade.grain, vignette: grade.vignette, sat: grade.sat, contrast: grade.contrast,
-      exposure, frame: frameNo++ % 997, aspect: W / H, aberration: grade.aberration ?? .012, lift: grade.lift, gain: grade.gain,
-    }, view.width, view.height);
-    sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.globalAlpha = 1; sctx.globalCompositeOperation = 'copy';
-    sctx.drawImage(gl.canvas, 0, 0); sctx.globalCompositeOperation = 'source-over';
-  } else {
-    drawLayer(sc, T, withBackdrop);
-    sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.globalCompositeOperation = 'copy'; sctx.drawImage(layer, 0, 0);
-    sctx.globalCompositeOperation = 'source-over';
-    if (exposure < 1) { sctx.fillStyle = `rgba(0,0,0,${1 - exposure})`; sctx.fillRect(0, 0, view.width, view.height); }
-  }
+  const sc = sceneAt(T);
+  drawScene(sc, T);
   overlays(T, sc);
 }
 
-// ------------------------------------------------------------------ 叠加层：遮幅、章节卡、字幕、闪白
-let SUBS = [];
-function letterboxAt(T, sc) {
-  const i = SCENES.indexOf(sc), cur = sc.letterbox ? 1 : 0, prev = i > 0 && SCENES[i - 1].letterbox ? 1 : cur;
-  return lerp(prev, cur, ease.inOut(progress(T - sc.t0, 0, .9)));
-}
+// ------------------------------------------------------------------ 叠加层：转场与字幕
+const subtitleStyle = () => ({ font: FONT.serif, size: 44, weight: 500, color: '#f3ece4', shadow: 'rgba(0,0,0,.85)', y: H - 80, ...FILM.subtitle });
 function overlays(T, sc) {
-  ctx = sctx;
-  const s = PIXEL.scale;
-  sctx.setTransform(s, 0, 0, s, 0, 0);
-  const lb = letterboxAt(T, sc) * (H - W / 2.39) / 2;
-  if (lb > .5) { sctx.fillStyle = '#000'; sctx.fillRect(0, 0, W, lb); sctx.fillRect(0, H - lb, W, lb); }
-  chapter(sc, T - sc.t0);
+  ctx = vctx;
+  ctx.setTransform(PIXEL.scale, 0, 0, PIXEL.scale, 0, 0); ctx.globalAlpha = 1;
+  const exposure = sceneFade(sc, T - sc.start);
+  if (exposure < 1) { ctx.fillStyle = sc.fadeTo || FILM.bg; ctx.globalAlpha = 1 - exposure; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
   subtitles(T);
-  const f = flashAt(T);
-  if (f > .01) { sctx.fillStyle = `rgba(255,248,235,${f})`; sctx.fillRect(0, 0, W, H); }
-}
-function chapter(sc, lt) {
-  if (!sc.chapter) return;
-  const a = fade(lt, .5, Math.min(sc.d - .2, 5), .6, .8); if (a <= 0) return;
-  const [n, main, sub] = sc.chapter, u = Math.min(W, H) / 1080, x = W * .047, y = Math.min(W, H) * .085;
-  const slide = (1 - ease.out(progress(lt, .5, .8))) * -30 * u;
-  const nw = text(n, x + slide, y, { font: FONT.display, weight: 700, size: 46 * u, color: '#e2bd6b', alpha: a, align: 'left' });
-  ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = '#e2bd6b'; ctx.fillRect(x + nw + 20 * u + slide, y - 26 * u, 2 * u, 52 * u); ctx.restore();
-  text(main, x + nw + 42 * u + slide, y - (sub ? 8 : 0) * u, { size: 36 * u, weight: 700, color: '#fff', alpha: a, align: 'left' });
-  if (sub) text(sub, x + nw + 44 * u + slide, y + 30 * u, { font: FONT.display, size: 16 * u, ls: 5 * u, color: '#cdb88e', alpha: a, align: 'left' });
 }
 function subtitles(T) {
-  const u = Math.min(W, H) / 1080;
+  const st = subtitleStyle();
   for (const sb of SUBS) {
-    if (T < sb.start - .3 || T > sb.end + .3) continue;
-    const a = fade(T, sb.start, sb.end, .25, .3); if (a <= 0) continue;
-    const g = ctx.createLinearGradient(0, H - 200 * u, 0, H);
-    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${.55 * a})`);
-    ctx.fillStyle = g; ctx.fillRect(0, H - 200 * u, W, 200 * u);
-    const main = { size: 42 * u, weight: 700, color: '#fff', alpha: a, glow: 'rgba(0,0,0,.9)', blur: 12 * u, ls: 2 * u, width: W * .86 };
-    const second = { font: FONT.italic, style: 'italic', weight: 500, size: 30 * u, color: '#ddd5c4', alpha: a * .9, glow: 'rgba(0,0,0,.9)', blur: 8 * u, width: W * .86 };
-    const mainLines = lines(sb.text, main.width, main), secondLines = sb.second ? lines(sb.second, second.width, second) : [];
-    let y = H - 48 * u - secondLines.length * 40 * u - (mainLines.length - 1) * 54 * u - 30 * u;
-    for (const l of mainLines) { text(l, W / 2, y, main); y += 54 * u; }
-    y += 2 * u;
-    for (const l of secondLines) { text(l, W / 2, y, second); y += 40 * u; }
+    if (T < sb.start - .2 || T > sb.end + .2) continue;
+    const a = fade(T, sb.start, sb.end, .15, .15); if (a <= 0) continue;
+    const main = { font: st.font, size: st.size, weight: st.weight, color: st.color, alpha: a, glow: st.shadow, blur: st.size * .3 };
+    const second = { ...main, size: st.size * .68, color: st.second || st.color, alpha: a * .85 };
+    const l1 = lines(sb.text, W * .86, main), l2 = sb.second ? lines(sb.second, W * .86, second) : [];
+    let y = st.y - (l1.length - 1) * st.size * 1.3 - l2.length * st.size;
+    for (const l of l1) { text(l, W / 2, y, main); y += st.size * 1.3; }
+    y -= st.size * .3;
+    for (const l of l2) { text(l, W / 2, y, second); y += st.size; }
   }
 }
 
 // ------------------------------------------------------------------ 字体、检查与导出接口
 let fontsReady = false, started = false;
-function cues() {
-  const out = [];
-  for (const sc of SCENES) {
-    for (const [t, name, opts] of sc.sfx || []) out.push({ t: +(sc.t0 + t).toFixed(4), name, ...(opts || {}), scene: sc.name });
-  }
-  return out.sort((a, b) => a.t - b.t);
-}
 function info() {
   return {
-    title: FILM.title, tagline: FILM.tagline, size: [W, H], bpm: BPM, duration: DURATION, tail: FILM.tail ?? 2, music: FILM.music, grade: FILM.grade,
-    poster: posterTime(), webgl: hasGL,
-    scenes: SCENES.map(s => ({
-      name: s.name, start: s.t0, end: s.t0 + s.d, bars: s.bars, music: s.music ?? null,
-      hits: (s.hits || []).map(([t, k = 1]) => [s.t0 + t, k]),
-    })),
+    title: FILM.title, tagline: FILM.tagline, size: [W, H], duration: DURATION, tail: FILM.tail ?? 1.5, poster: posterTime(),
+    scenes: SCENES.map(s => ({ name: s.name, start: s.start, end: s.end })),
     subs: SUBS.map(({ start, end, text, second, scene }) => ({ start, end, text, second, scene })),
-    cues: cues(),
+    lines: LINES.length, cues: CUES.length, music: !!FILM.music,
   };
 }
-// check 用：在给定时刻只画图层（不含背景、后期和叠加层），记录越界或压住字幕的文字，
+// check 用：在给定时刻只画场景（不含转场和字幕），记录越界或压住字幕的文字，
 // 并给出与上一个采样相比变化了的像素比例，用来找长时间不动的画面。
 const SIG = document.createElement('canvas');
 SIG.width = 96; SIG.height = 54;
@@ -726,23 +591,23 @@ const scanSeen = new Set();
 const OVERLAP_SHARE = .1;   // 重叠面积占较小文字字形框的比例
 let lastSig = null, lastScene = null;
 function signature() {
-  sigctx.drawImage(layer, 0, 0, SIG.width, SIG.height);
+  sigctx.drawImage(view, 0, 0, SIG.width, SIG.height);
   const d = sigctx.getImageData(0, 0, SIG.width, SIG.height).data, out = new Uint8Array(SIG.width * SIG.height);
   for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 54 + d[i * 4 + 1] * 183 + d[i * 4 + 2] * 19) >> 8;
   return out;
 }
 function scan(times) {
-  const issues = [], motion = [], u = Math.min(W, H) / 1080;
+  const issues = [], motion = [], st = subtitleStyle(), band = st.y - st.size * 2.2;
   for (const T of times) {
     const sc = sceneAt(T);
     track = [];
-    drawLayer(sc, T, false);
+    drawScene(sc, T);
     const sig = signature();
     let changed = null;
     if (lastSig && lastScene === sc) { changed = 0; for (let i = 0; i < sig.length; i++) if (Math.abs(sig[i] - lastSig[i]) > 6) changed++; changed /= sig.length; }
     motion.push(changed);
     lastSig = sig; lastScene = sc;
-    const subOn = SUBS.some(sb => T >= sb.start && T <= sb.end), band = H - (SUBS.length ? 150 * u : 0);
+    const subOn = SUBS.some(sb => T >= sb.start && T <= sb.end);
     for (const b of track) {
       const key = `${sc.name}|${b.text}`;
       if (scanSeen.has(key)) continue;
@@ -751,14 +616,14 @@ function scan(times) {
       if (out || edge) { scanSeen.add(key); issues.push({ kind: out ? 'clipped' : 'edge', scene: sc.name, at: +T.toFixed(2), text: b.text, box: [b.x0, b.y0, b.x1, b.y1].map(Math.round) }); }
       else if (subOn && b.y1 > band) { scanSeen.add(key); issues.push({ kind: 'under-subtitle', scene: sc.name, at: +T.toFixed(2), text: b.text, box: [b.x0, b.y0, b.x1, b.y1].map(Math.round) }); }
     }
-    // 两段不同的文字明显重叠；同一段文字叠画（故障字、描边加填充）不算
+    // 两段不同的文字明显重叠；同一段文字叠画（描边加填充）不算
     for (let i = 0; i < track.length; i++) for (let j = i + 1; j < track.length; j++) {
       const p = track[i], q = track[j];
       if (p.text === q.text) continue;
       const w = Math.min(p.x1, q.x1) - Math.max(p.x0, q.x0), h = Math.min(p.y1, q.y1) - Math.max(p.y0, q.y0);
       if (w <= 0 || h <= 0) continue;
       const share = w * h / Math.min((p.x1 - p.x0) * (p.y1 - p.y0), (q.x1 - q.x0) * (q.y1 - q.y0));
-      // 按两框的位置去重：滚动计数器每帧文字都不同，但碰撞的是同一处
+      // 按两框的位置去重：打字和计数每帧文字都不同，但碰撞的是同一处
       const at = r => `${Math.round((r.x0 + r.x1) / 80)},${Math.round((r.y0 + r.y1) / 80)}`, key = `${sc.name}|${at(p)}|${at(q)}`;
       if (share < OVERLAP_SHARE || scanSeen.has(key)) continue;
       scanSeen.add(key);
@@ -768,7 +633,7 @@ function scan(times) {
   }
   return { issues, motion };
 }
-const posterTime = () => clamp(FILM.poster ?? (SCENES[1] ? SCENES[1].t0 + SCENES[1].d * .6 : DURATION * .3), 0, DURATION - .01);
+const posterTime = () => clamp(FILM.poster ?? (SCENES[1] ? SCENES[1].start + SCENES[1].d * .6 : DURATION * .3), 0, DURATION - .01);
 
 window.PROMO = {
   ready: () => started && fontsReady,
@@ -776,22 +641,18 @@ window.PROMO = {
   scan,
   frame(t, o = {}) {
     if (o.scale && o.scale !== PIXEL.scale) setScale(o.scale);
-    renderFrame(t, o.samples || 1, o.fps || 30);
+    renderFrame(t);
     return view.toDataURL('image/jpeg', o.quality ?? .92);
   },
+  audio: () => wav(soundtrack()),
 };
 
 function start() {
-  layout();
-  SUBS = SCENES.flatMap(s => (s.subs || []).map(sub => {
-    const [a, b, t1, t2] = sub;
-    if (!(b > a) || typeof t1 !== 'string') throw new Error(`${s.name}: each subtitle is [start, end, text, secondLine?] with end > start`);
-    return { start: s.t0 + a, end: s.t0 + b, text: t1, second: t2, scene: s.name };
-  }));
+  if (!SCENES.length) throw new Error('the film has no scenes');
+  DURATION = SCENES[SCENES.length - 1].end + (FILM.tail ?? 1.5);
   if (EXPORT) document.body.classList.add('export');
-  hasGL = glInit();
   setScale(+(PARAMS.get('scale') || 1));
-  document.title = FILM.title || 'Promo';
+  document.title = FILM.title || 'Film';
   started = true;
   Promise.all([...document.fonts].map(f => f.load().catch(() => {}))).then(() => document.fonts.ready).then(() => {
     fontsReady = true;
@@ -802,12 +663,11 @@ function start() {
 // ------------------------------------------------------------------ 播放器
 function player() {
   const $ = id => document.getElementById(id);
-  const stage = $('stage'), audio = $('audio'), cover = $('cover'), controls = $('controls'), toggle = $('toggle'), bar = $('bar'), fill = $('fill');
+  const stage = $('stage'), cover = $('cover'), controls = $('controls'), toggle = $('toggle'), bar = $('bar'), fill = $('fill');
   stage.appendChild(view);
   $('cover-title').textContent = FILM.title; $('cover-tagline').textContent = FILM.tagline || '';
   const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   $('duration').textContent = fmt(DURATION);
-  if (window.PROMO_AUDIO) audio.src = window.PROMO_AUDIO;
   const fs = $('fullscreen');
   if (!document.fullscreenEnabled) fs.remove();
   else fs.onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {});
@@ -817,8 +677,31 @@ function player() {
     const r = stage.getBoundingClientRect(), s = clamp(r.width * devicePixelRatio / W, .35, 1);
     if (Math.abs(s - PIXEL.scale) / PIXEL.scale > .1) { setScale(s); draw(); }
   };
-  let playing = false, clock0 = 0, offset = 0, useAudio = !!window.PROMO_AUDIO, hideTimer = 0, now = 0, failed = false;
-  const time = () => playing ? (useAudio ? audio.currentTime : offset + (performance.now() - clock0) / 1000) : offset;
+  // 音轨在封面停留时合成；声音是时钟，没有声音（浏览器不支持或出错）时退回系统时钟
+  let samples = null, ac = null, synth = null, extra = null, sources = [];
+  setTimeout(() => { try { samples = soundtrack(); } catch (e) { console.error(e); } }, 30);
+  async function prepareAudio() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ac = new AC();
+    samples = samples || soundtrack();
+    synth = ac.createBuffer(1, samples.length, RATE); synth.copyToChannel(samples, 0);
+    if (window.PROMO_AUDIO) extra = await ac.decodeAudioData(await (await fetch(window.PROMO_AUDIO)).arrayBuffer());
+    if (ac.state === 'suspended') await ac.resume();
+  }
+  let playing = false, offset = 0, clock0 = 0, acStart = 0, hideTimer = 0, now = 0, failed = false;
+  const time = () => playing ? offset + (ac ? ac.currentTime - acStart : (performance.now() - clock0) / 1000) : offset;
+  function stopSources() { for (const s of sources) { try { s.stop(); } catch (e) { /* 已经停了 */ } } sources = []; }
+  function startSources() {
+    stopSources();
+    clock0 = performance.now();
+    if (!ac) return;
+    acStart = ac.currentTime;
+    for (const b of [synth, extra]) {
+      if (!b || offset >= b.duration) continue;
+      const s = ac.createBufferSource(); s.buffer = b; s.connect(ac.destination); s.start(0, offset); sources.push(s);
+    }
+  }
   function draw() {
     // 开播前画面停在海报帧，进度仍从 0 开始
     try { renderFrame(document.body.classList.contains('started') ? now : posterTime()); }
@@ -835,19 +718,20 @@ function player() {
   function play() {
     if (offset >= DURATION - .1) offset = 0;
     playing = true; document.body.classList.add('playing');
-    if (useAudio) { audio.currentTime = offset; audio.play().catch(() => { useAudio = false; clock0 = performance.now(); }); }
-    clock0 = performance.now();
+    startSources();
     requestAnimationFrame(loop);
   }
-  function pause() { offset = time(); playing = false; document.body.classList.remove('playing'); if (useAudio) audio.pause(); }
+  function pause() { offset = time(); playing = false; stopSources(); document.body.classList.remove('playing'); }
   function seek(t) {
     offset = now = clamp(t, 0, DURATION - .02);
-    if (useAudio) audio.currentTime = offset;
-    clock0 = performance.now();
-    if (!playing) draw();
+    if (playing) startSources(); else draw();
   }
   function poke() { controls.classList.add('show'); clearTimeout(hideTimer); hideTimer = setTimeout(() => playing && controls.classList.remove('show'), 2200); }
-  cover.onclick = () => { cover.remove(); document.body.classList.add('started'); play(); poke(); };
+  cover.onclick = async () => {
+    cover.remove(); document.body.classList.add('started');
+    try { await prepareAudio(); } catch (e) { console.error(e); stopSources(); ac = null; }
+    play(); poke();
+  };
   toggle.onclick = () => playing ? pause() : play();
   let dragging = false;
   const scrub = e => { const r = bar.getBoundingClientRect(); seek(clamp((e.clientX - r.left) / r.width) * DURATION); };
