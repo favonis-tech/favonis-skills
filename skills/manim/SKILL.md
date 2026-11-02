@@ -33,7 +33,7 @@ Write a Manim Community scene as a project source file, render it in the sandbox
 
 ## Environment
 
-- The Favonis sandbox image includes Manim Community 0.22 with the Cairo renderer, FFmpeg, TeX Live (LaTeX, XeLaTeX, ctex, dvisvgm) and Noto CJK fonts. Run `python -m manim --version` once. If Manim is missing, the sandbox was created from an older image: tell the user and stop. Do not install it with pip; its Cairo and Pango builds need system packages that cannot be added in the sandbox.
+- The Favonis sandbox image includes Manim Community with the Cairo renderer, FFmpeg, TeX Live (LaTeX, XeLaTeX, ctex, dvisvgm) and Noto CJK fonts. Run `python -m manim --version` once. If Manim is missing, the sandbox was created from an older image: tell the user and stop. Do not install it with pip; its Cairo and Pango builds need system packages that cannot be added in the sandbox.
 - The package directory is the `sandbox_path` returned by `skill_read` (normally `/skills/manim`) and is read-only. Read [references/authoring.md](references/authoring.md) before writing the first scene in a conversation, and read [scripts/render.py](scripts/render.py) once before running it. Run the script with an explicit interpreter: `python /skills/manim/scripts/render.py`.
 - Use the `shell` tool in `/project`. Paths passed to the script and to `present_files` are project-relative. Manim's cache and intermediate files stay in `/tmp/manim`.
 - Manim Community is not 3Blue1Brown's `manimgl`/`manimlib`; never import those. Never pass `-p`/`--preview` or `--renderer opengl`: the sandbox has no display or GPU.
@@ -50,7 +50,7 @@ Write a Manim Community scene as a project source file, render it in the sandbox
    ```
 
    On `"ok": false`, read `error`: its last lines name the failing source line or the LaTeX error. Fix the source and render again. Also resolve `warnings`, such as a missing font.
-5. **Check frames.** The sheet tiles evenly spaced frames, first and last included, in reading order; `sheet_times` gives their timestamps. To see it, copy it into a temporary project review folder, open it with `project_read`, then delete that review copy. Look for overlapping or clipped elements, text that is too small, wrongly rendered formulas, empty frames and leftovers from earlier beats. Fix and re-render until the draft is clean. Use `--sheet-frames 12` to `16` for longer scenes. If you cannot view images, say that the visual check was not performed.
+5. **Check frames.** The sheet tiles evenly spaced frames, first and last included, in reading order; `sheet_times` gives their timestamps. Look at it with the `view` tool, which reads `/tmp` paths. Look for overlapping or clipped elements, text that is too small, wrongly rendered formulas, empty frames and leftovers from earlier beats. Fix and re-render until the draft is clean. Use `--sheet-frames 12` to `16` for longer scenes. If you cannot view images, say that the visual check was not performed.
 6. **Final render** at the delivery quality into the project:
 
    ```bash
@@ -64,19 +64,7 @@ For several scenes, render each one without `--output`, then join the `rendered`
 
 ## Render script
 
-| Option | Meaning |
-| --- | --- |
-| `FILE SCENE` | Source file and one Scene class name. |
-| `--quality l\|m\|h\|p\|k` | 480p15 (default, for drafts), 720p30, 1080p60, 1440p60, 2160p60. |
-| `--resolution W,H` | Custom pixel size, for example `1080,1920`. The frame height stays 8 units, so a vertical frame is only 4.5 units wide. |
-| `--fps N` | Override the preset frame rate. |
-| `--format mp4\|gif\|webm\|mov` | Video container, default `mp4`. |
-| `--still` | Save only the last frame as PNG. |
-| `--transparent` | Alpha channel; combine with `--format mov` or `--still`. |
-| `--output PATH` | Copy the result there; the extension must match the format. |
-| `--sheet PATH`, `--sheet-frames N` | Contact sheet PNG of N frames (default 8). |
-
-The script prints JSON. On success it reports `rendered` (the cached file), `output`, `width`, `height`, `duration`, `fps`, `sheet`, `sheet_times` and any `warnings`, and exits with 0. On failure it reports `"ok": false`, `exit_code` and `error`, and exits with 1. A wrong scene name fails at once, and the error lists the scenes in the file.
+The script prints JSON. On success it reports `rendered` (the cached file), `output`, `width`, `height`, `duration`, `fps`, `sheet`, `sheet_times` and any `warnings`, and exits with 0. On failure it reports `"ok": false`, `exit_code` and `error`, and exits with 1; a wrong scene name fails at once and the error lists the scenes in the file. Beyond `--quality`, `--output` and `--sheet`, it takes `--resolution`, `--fps`, `--format`, `--still`, `--transparent` and `--sheet-frames`; [references/authoring.md](references/authoring.md) lists them.
 
 ## Narration and sound
 

@@ -7,7 +7,7 @@
 Adapted for Favonis:
 
 - The frontmatter uses the Favonis fields (English `description` for the model, interface text in `localizations`); upstream `allowed-tools` and `metadata` are dropped.
-- 「输出与文件保护」 is replaced by 「在 Favonis 中处理文本和文件」, which maps the same rules onto Favonis tools: targeted `project_edit` edits with a backup and `project_diff` review for Markdown, batched `docx` `replace_text` edits for Word files, and a new file for PDF or image text.
+- 「输出与文件保护」 is replaced by 「在 Favonis 中处理文本和文件」, which maps the same rules onto Favonis tools: targeted `edit` calls with a backup and a shell `diff` review for Markdown, python-docx edits on a copy (the `docx` tool cannot change text in place) for Word files, and a new file for PDF or image text.
 - One line about the fixed phrases of 公文 and legal documents is added to 「文体与作者声音」.
 - `scripts/check_markdown.py` is adapted from upstream `tests/check_structure.py`: it reports which protected parts changed, ignores code inside fenced blocks when collecting inline code, links and headings, and no longer freezes the text of numbered list items.
 - The pattern catalogue (A–F), constraints, workflow, checklist and example are unchanged.

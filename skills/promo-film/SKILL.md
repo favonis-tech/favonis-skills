@@ -34,7 +34,7 @@ Design the film in a production bible, implement it as one JavaScript file for t
 ## Environment
 
 - The package directory is the `sandbox_path` returned by `skill_read` (normally `/skills/promo-film`) and is read-only. Before writing the first film in a conversation, read [references/craft.md](references/craft.md), [references/api.md](references/api.md), [references/example-bible.md](references/example-bible.md) and [references/example.js](references/example.js); the commands below are all you need from the script.
-- Use the `shell` tool in `/project` and run the script with an explicit interpreter: `python /skills/promo-film/scripts/promo.py`. Paths passed to the script and to `present_files` are project-relative; caches stay under `/tmp/promo-film`.
+- Use the `shell` tool in `/project` and run the script with an explicit interpreter: `python /skills/promo-film/scripts/promo.py`. The film and the outputs passed to `present_files` are project-relative; caches stay under `/tmp/promo-film`, and review sheets go under `/tmp` too, where the `view` tool can show them.
 - The sandbox renders with headless Chromium; nothing has to be installed. If the script reports that Chromium, Playwright or fontTools is missing, the sandbox was created from an older image: tell the user and stop.
 
 ## Workflow
@@ -45,10 +45,10 @@ Design the film in a production bible, implement it as one JavaScript file for t
 4. **Check** and review a contact sheet:
 
    ```bash
-   python /skills/promo-film/scripts/promo.py check promo/queue/film.js --sheet review/queue.png
+   python /skills/promo-film/scripts/promo.py check promo/queue/film.js --sheet /tmp/promo-review/queue.png
    ```
 
-   On `"ok": false`, fix the error it names (scene, time and `film.js` line) and run it again. Resolve every entry in `issues`. Open every page listed in `sheets` with `project_read` and work through the review list in craft.md. `--at 3.5,12.2` picks other moments; a single moment comes out full size. Delete the `review` folder with `project_delete` before delivering. If you cannot view images, say that the visual check was not performed.
+   On `"ok": false`, fix the error it names (scene, time and `film.js` line) and run it again. Resolve every entry in `issues`. Look at every page listed in `sheets` with the `view` tool and work through the review list in craft.md. `--at 3.5,12.2` picks other moments; a single moment comes out full size. If you cannot view images, say that the visual check was not performed.
 5. **Build** the player and deliver it. Build only after the last edit to `film.js` has passed `check` and you have looked at the frames of the scenes it changed. Do not edit the film after building; if a change is still needed, check and review it, then rebuild before delivering.
 
    ```bash

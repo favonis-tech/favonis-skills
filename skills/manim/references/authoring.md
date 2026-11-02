@@ -1,4 +1,4 @@
-# Writing Manim Community scenes (v0.22)
+# Writing Manim Community scenes
 
 ## Skeleton
 
@@ -69,7 +69,7 @@ Use `Scene` by default, `MovingCameraScene` to zoom or pan, and `ThreeDScene` fo
 - **Timing:** set `run_time=` per `play` and `rate_func=` (`smooth` by default, `linear`, `there_and_back`, `rush_into`, `rush_from`). Typical values: 1–2 seconds per animation, a 0.5–1.5 second pause after a key reveal, and enough time to read each new line of text.
 - **Motion driven by values:** `t = ValueTracker(0)` then `self.play(t.animate.set_value(5))`. `always_redraw(lambda: Dot(axes.c2p(t.get_value(), f(t.get_value()))))` rebuilds an object every frame; `obj.add_updater(lambda m: m.next_to(dot, UP))` keeps one attached; `clear_updaters()` stops it.
 
-Old APIs from manimgl or older tutorials fail in Community 0.22. Replace `ShowCreation` with `Create`, `TextMobject`/`TexMobject` with `Tex`/`MathTex`, `GraphScene` and `get_graph` with `Axes` and `axes.plot`, `FadeInFrom` with `FadeIn(obj, shift=...)`, `ShowCreationThenDestruction` with `ShowPassingFlash`, class-level `CONFIG` dictionaries with constructor arguments, and `self.camera_frame` with `self.camera.frame` in a `MovingCameraScene`.
+Old APIs from manimgl or older tutorials fail in current Manim Community. Replace `ShowCreation` with `Create`, `TextMobject`/`TexMobject` with `Tex`/`MathTex`, `GraphScene` and `get_graph` with `Axes` and `axes.plot`, `FadeInFrom` with `FadeIn(obj, shift=...)`, `ShowCreationThenDestruction` with `ShowPassingFlash`, class-level `CONFIG` dictionaries with constructor arguments, and `self.camera_frame` with `self.camera.frame` in a `MovingCameraScene`.
 
 ## Shapes, graphs and data
 
@@ -93,3 +93,17 @@ Old APIs from manimgl or older tutorials fail in Community 0.22. Replace `ShowCr
 - Draft at quality `l`. Render time grows with resolution, frame rate and the number of objects; 3D surfaces, many updaters and large LaTeX blocks are the slowest parts.
 - A LaTeX failure shows the TeX error in the report's `error`. Check raw strings, matching braces, and Chinese inside the default template. Each distinct LaTeX string is compiled once and cached.
 - A `NameError` on an animation or mobject usually means an old API; see the replacement list above.
+
+## Render script options
+
+| Option | Meaning |
+| --- | --- |
+| `FILE SCENE` | Source file and one Scene class name. |
+| `--quality l\|m\|h\|p\|k` | 480p15 (default, for drafts), 720p30, 1080p60, 1440p60, 2160p60. |
+| `--resolution W,H` | Custom pixel size, for example `1080,1920`. The frame height stays 8 units, so a vertical frame is only 4.5 units wide. |
+| `--fps N` | Override the preset frame rate. |
+| `--format mp4\|gif\|webm\|mov` | Video container, default `mp4`. |
+| `--still` | Save only the last frame as PNG. |
+| `--transparent` | Alpha channel; combine with `--format mov` or `--still`. |
+| `--output PATH` | Copy the result there; the extension must match the format. |
+| `--sheet PATH`, `--sheet-frames N` | Contact sheet PNG of N frames (default 8). |

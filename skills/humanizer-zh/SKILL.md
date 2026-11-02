@@ -66,9 +66,9 @@ localizations:
 - **只要审阅**：在回复里列出值得改的句子、改法和简短理由，不写回文件。
 - **项目里的 Markdown 或纯文本**：用户要求修改文件时才写回原路径。项目会保留修改前的版本，用户可以在版本历史里对比和恢复，不另存「润色版」副本。
   1. 改之前用 shell 备份原文：`mkdir -p /tmp/humanizer && cp 文章.md /tmp/humanizer/原稿.md`。
-  2. 用 `project_read` 读全文，再用 `project_edit` 按句或按段定点替换，`old_text` 取原文中唯一的片段。不要整篇重写；长文分多次编辑，每次调用的文字合计不超过 300 行。
-  3. 改完运行 `python /skills/humanizer-zh/scripts/check_markdown.py /tmp/humanizer/原稿.md 文章.md`（技能目录以 `skill_read` 返回的 `sandbox_path` 为准）。它核对 YAML front matter、代码块、行内代码、标题、链接目标、表格行和显式 ID 是否原样保留；`passed` 为 false 时找出被改动的部分并恢复。再用 `project_diff` 对照修改前的版本，按「交付前核对」逐处检查。
-- **Word 文件（DOCX）**：用 `docx` 工具的 `inspect` 取得段落编号和文件版本，再用一次 `edit` 提交一批 `replace_text`，每项带 `paragraph` 编号和 `expected_version`，只替换需要改的句子片段，加粗、链接和样式就留在原处（参数见内置技能 office-docx）。标题、表格和含公式的段落默认不动；工具拒绝的段落跳过并在回复里说明。改完用 `inspect` 再读一遍改过的段落。这条路径不能留下 Word 修订痕迹：用户要求留痕时，在回复里给出「原句 → 改后」对照，不写回文件。
+  2. 用 `read` 读全文，再用 `edit` 按句或按段定点替换，`old_text` 从刚读到的原文里复制、取唯一的片段。不要整篇重写；长文分多次编辑。`edit` 成功后结果里的 `changed` 带行号给出改后的片段，不必再读一遍核对；失败时它指出最接近的行或分歧所在，照着改 `old_text` 再提交。
+  3. 改完运行 `python /skills/humanizer-zh/scripts/check_markdown.py /tmp/humanizer/原稿.md 文章.md`（技能目录以 `skill_read` 返回的 `sandbox_path` 为准）。它核对 YAML front matter、代码块、行内代码、标题、链接目标、表格行和显式 ID 是否原样保留；`passed` 为 false 时找出被改动的部分并恢复。再用 shell 运行 `diff -u /tmp/humanizer/原稿.md 文章.md` 对照全文，按「交付前核对」逐处检查。
+- **Word 文件（DOCX）**：`docx` 工具只能新建、追加和检查，不能原地改句子。按内置技能 office-docx 的编辑指南（`skill_read` 读 name `office-docx`、path `references/editing.md`），在工作文件夹里用 python-docx 改一份副本：先 `docx` `inspect` 取得段落编号，对要改的段落用随该技能安装的 `docx_tools.set_text`（保留首个 run 的格式）或 `set_runs` 只替换文字，标题、表格和含公式的段落默认不动；保存后用 `copy` 覆盖到原路径（原文件留在版本历史里），再 `inspect` 核对改过的段落。这条路径不能留下 Word 修订痕迹：用户要求留痕时，在回复里给出「原句 → 改后」对照，不写回文件。
 - **PDF、图片里的文字等不能原地修改的文件**：读出文字后，把改写稿另存为同名的 `.md` 或 `.docx`（用户指定格式时从其要求），并说明原文件没有改动。
 - **很长的文档**：范围（全文、某一章还是几段）明显影响工作量又不明确时，用 `user_actions` 问一次。按章节顺序处理，每完成一部分就对照原文核对，保持前后用词一致。
 - 默认只编辑散文正文。代码块、行内代码、命令、路径、URL、链接目标、显式 ID、YAML front matter 和数据保持原样；保留标题的文字、层级和数量，避免破坏自动锚点；保留表格数据、列表项的独立含义和顺序。用户要求重排或改标题时，检查相关引用后处理。
