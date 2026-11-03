@@ -1,0 +1,14 @@
+/* 现代：姓名和条目标题用强调色，分节标题是带左侧色条的浅色底带。 */
+.name {
+  color: var(--accent);
+  font-size: 2.3em;
+}
+.section > h2 {
+  padding: 0.05em 0.55em;
+  border-left: 0.24em solid var(--accent);
+  background: var(--tint);
+  color: var(--ink);
+}
+.entry-title {
+  color: var(--accent);
+}

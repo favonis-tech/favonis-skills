@@ -1,0 +1,150 @@
+/* 三套模板共用的结构；脚本在 :root 写入 --size、--leading、--sheet 和 --accent，模板文件只改外观。 */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+html {
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+  --ink: #1d2129;
+  --muted: #4e5969;
+  --rule: color-mix(in srgb, var(--accent) 45%, white);
+  --tint: color-mix(in srgb, var(--accent) 9%, white);
+}
+body {
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--size);
+  line-height: var(--leading);
+  font-kerning: normal;
+  overflow-wrap: anywhere;
+}
+.sheet {
+  display: flow-root;
+  width: var(--sheet);
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+mark {
+  background: #ffe27a;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.15em;
+}
+strong {
+  font-weight: 700;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.6em;
+}
+.id {
+  min-width: 0;
+  flex: 1;
+}
+.name {
+  font-size: 2.1em;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+}
+.headline {
+  margin-top: 0.15em;
+  font-size: 1.06em;
+}
+.contacts {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 1.2em;
+  margin-top: 0.3em;
+  color: var(--muted);
+}
+.photo {
+  flex: none;
+  width: 25mm;
+  height: 33mm;
+  object-fit: cover;
+}
+
+.section {
+  margin-top: 0.8em;
+}
+.section > h2 {
+  margin-bottom: 0.35em;
+  font-size: 1.12em;
+  font-weight: 700;
+  line-height: 1.45;
+  break-after: avoid;
+}
+.entry + .entry {
+  margin-top: 0.45em;
+}
+.entry-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1em;
+  break-after: avoid;
+}
+.entry-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 1.1em;
+  min-width: 0;
+}
+.entry-title {
+  font-weight: 700;
+}
+.entry-date {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.entry-note {
+  color: var(--muted);
+}
+.entry-note,
+.bullets,
+.items {
+  break-before: avoid;
+}
+
+ul {
+  list-style: none;
+}
+.bullets > li {
+  position: relative;
+  padding-left: 1.05em;
+  break-inside: avoid;
+}
+.bullets > li::before {
+  position: absolute;
+  top: calc(var(--leading) * 0.5em - 0.14em);
+  left: 0.32em;
+  width: 0.28em;
+  height: 0.28em;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+.items > li {
+  break-inside: avoid;
+}
+.label {
+  font-weight: 700;
+}
+.label::after {
+  content: "：";
+}
+:lang(en) .label::after {
+  content: ": ";
+}

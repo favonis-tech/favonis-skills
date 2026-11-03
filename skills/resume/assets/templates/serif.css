@@ -1,0 +1,30 @@
+/* 典雅（默认）：衬线姓名和标题、居中页头、通栏细线。 */
+.name,
+.section > h2,
+.entry-title {
+  font-family: var(--serif);
+}
+.head:not(.has-photo) {
+  justify-content: center;
+  text-align: center;
+}
+.head:not(.has-photo) .contacts {
+  justify-content: center;
+}
+.name {
+  letter-spacing: 0.06em;
+}
+.section > h2 {
+  padding-bottom: 0.1em;
+  border-bottom: 1px solid var(--accent);
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+:lang(en) .section > h2 {
+  font-size: 1.02em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+:lang(en) body {
+  font-family: var(--serif);
+}

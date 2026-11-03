@@ -1,0 +1,6 @@
+/* 经典：全无衬线、页头左对齐，强调色只给分节标题和细线。 */
+.section > h2 {
+  padding-bottom: 0.12em;
+  border-bottom: 1px solid var(--rule);
+  color: var(--accent);
+}
