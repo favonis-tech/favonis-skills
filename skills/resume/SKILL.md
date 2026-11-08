@@ -40,7 +40,7 @@ Facts come from the user, wording from references/writing.md, layout from the sc
   python /skills/resume/scripts/resume.py 简历/林晓-后端开发.yaml --output 简历/林晓-后端开发.pdf
   ```
 
-  `--docx 简历/林晓-后端开发.docx` also writes a Word version; `--template classic` or `modern` overrides the template when the user wants to compare looks. The script needs PyYAML, PyMuPDF and Playwright's Chromium, plus python-docx and LibreOffice (`render-office`) for Word, which the sandbox image provides. If an import fails, the sandbox was created from an older image: tell the user and stop instead of installing packages.
+  `--docx 简历/林晓-后端开发.docx` also writes a Word version; `--template` with another name from source.md "Templates" (such as `classic`, `timeline` or `banner`) overrides the template when the user wants to compare looks. The script needs PyYAML, PyMuPDF and Playwright's Chromium, plus python-docx and LibreOffice (`render-office`) for Word, which the sandbox image provides. If an import fails, the sandbox was created from an older image: tell the user and stop instead of installing packages.
 
 ## What the request needs
 

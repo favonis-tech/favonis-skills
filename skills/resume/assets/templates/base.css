@@ -1,4 +1,5 @@
-/* 三套模板共用的结构；脚本在 :root 写入 --size、--leading、--sheet 和 --accent，模板文件只改外观。 */
+/* 各模板共用的结构；脚本在 :root 写入 --size、--leading、--sheet、--margin-x、--margin-y 和 --accent，模板文件只改外观。 */
+/* 分节是 .section > h2 > span 加 .body；条目是 .entry > .entry-head（.entry-main + .entry-date）、.entry-note、.bullets。 */
 * {
   box-sizing: border-box;
   margin: 0;

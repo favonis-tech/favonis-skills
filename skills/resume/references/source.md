@@ -10,7 +10,7 @@ The source is one YAML file per version, such as `简历/林晓-后端开发.yam
 | `headline` | One line under the name: the target role, such as `求职意向：后端开发工程师（2026 届校招）` or `Data Analyst`. |
 | `contacts` | List shown on one line: phone, email, city, links. Email addresses and web addresses become links. |
 | `photo` | Image path relative to the source; shown at the top right at 25 × 33 mm. Only when the user supplies one and the target expects it. |
-| `template` | `serif` (default), `classic` or `modern`; see below. |
+| `template` | `serif` (default), `classic`, `modern`, `timeline`, `sidebar` or `banner`; see below. |
 | `accent` | Optional color such as `"#1f4e79"`, replacing the template's accent (quote it: YAML reads `#` as a comment). |
 | `lang` | `zh` (default) or `en`: fonts and label punctuation. |
 | `pages` | `1` (default) or `2`. |
@@ -36,13 +36,20 @@ An entry has `title` (required: school, company or project), `subtitle` (degree 
 
 ## Templates
 
-All three are single-column, so applicant tracking systems read them in order. Use `serif` unless the user asks for another look.
+Every template keeps the text in source order, so applicant tracking systems read the sections in order. Use `serif` unless the user asks for another look; for an application portal known to parse strictly, stay with `serif` or `classic`.
 
-| Template | Look |
-| --- | --- |
-| `serif` | Serif name, section and entry titles, centered header, near-black full-width rules; the default |
-| `classic` | Sans-serif throughout, left-aligned header, navy section titles over a light rule |
-| `modern` | Name and entry titles in the accent color, section titles on a tinted band with a side bar |
+| Template | Look | Suits |
+| --- | --- | --- |
+| `serif` | Serif name, section and entry titles, centered header, near-black full-width rules; the default | Any resume |
+| `classic` | Sans-serif throughout, left-aligned header, navy section titles over a light rule | Any resume |
+| `modern` | Name and entry titles in the accent color, section titles on a tinted band with a side bar | A little color without a heavy block |
+| `timeline` | Each entry's date in its own left column, aligned down the page; section titles as teal tags on a rule; entry titles in teal | Many dated entries, such as internships and campus roles for 校招 |
+| `sidebar` | Section titles in a left column, right-aligned, with a thin vertical line between titles and content; the header lines up with the content | Dense content: titles take no line of their own, so a page holds a few more lines |
+| `banner` | A navy band across the top of the first page with the name and contacts in white; section titles in the accent color over a light rule | Roles where some color is welcome, such as 运营, 市场 or 产品; in black-and-white print the band is a dark block |
+
+- `timeline` sizes the date column to the longest date and wraps only a date wider than about ten Chinese characters, so keep one short format, such as `2024.07 – 2025.06` or `2024.07 – 至今`.
+- `sidebar` sizes the title column to the longest section title and wraps a Chinese title longer than seven characters; four-character titles (教育背景, 实习经历, 项目经历, 专业技能, 荣誉奖项) keep the column narrow.
+- `accent` recolors any template; a `banner` accent must be dark enough for white text.
 
 When the user wants to choose, build the same source with `--template` into separate files (for example `简历/样式-classic.pdf`), view and present them, then write the chosen one into the source and delete the other previews.
 

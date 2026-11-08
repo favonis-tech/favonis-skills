@@ -23,8 +23,10 @@ from pathlib import Path
 import yaml
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "assets" / "templates"
-TEMPLATE_ACCENTS = {"serif": "#262626", "classic": "#1f4e79", "modern": "#2563a8"}
+TEMPLATE_ACCENTS = {"serif": "#262626", "classic": "#1f4e79", "modern": "#2563a8",
+                    "timeline": "#13706b", "sidebar": "#8c2f39", "banner": "#23426b"}
 DEFAULT_TEMPLATE = "serif"
+BLEED = {"banner"}  # 页头色块铺满首页顶部：首页上边距归零，可用高度多出一个页边距
 LANGS = ("zh", "en")
 
 # 正文字号在 FLOOR–CEILING（磅）之间按 STEP 取最大的那一档；行距和页边距随字号一起放宽，内容少时页面仍从容。
@@ -308,6 +310,7 @@ def document_html(spec, size):
     fonts = FONTS[spec["lang"]]
     css = (TEMPLATES / "base.css").read_text(encoding="utf-8") + (TEMPLATES / f"{spec['template']}.css").read_text(encoding="utf-8")
     root = (f":root{{--size:{d.size}pt;--leading:{d.leading};--sheet:{PAGE_W - 2 * d.margin_x}mm;"
+            f"--margin-x:{d.margin_x}mm;--margin-y:{d.margin_y}mm;"
             f"--accent:{spec['accent']};--sans:{fonts['sans']};--serif:{fonts['serif']}}}")
     page = f"@page{{size:A4;margin:{d.margin_y}mm {d.margin_x}mm}}"
     head = [f'<h1 class="name">{inline(spec["name"])}</h1>']
@@ -332,7 +335,7 @@ def bullets_html(items, place):
 
 def section_html(section):
     title = section["title"]
-    parts = [f'<section class="section"><h2>{inline(title)}</h2>']
+    parts = [f'<section class="section"><h2><span>{inline(title)}</span></h2><div class="body">']
     kind = section["kind"]
     if kind == "text":
         parts.append(f'<p class="text" data-where="{escape(title)}">{inline(section["text"])}</p>')
@@ -356,7 +359,7 @@ def section_html(section):
             if entry["bullets"]:
                 parts.append(bullets_html(entry["bullets"], place))
             parts.append("</div>")
-    parts.append("</section>")
+    parts.append("</div></section>")
     return "".join(parts)
 
 
@@ -444,11 +447,15 @@ def fit(browser, spec, output):
     sizes = [round(FLOOR + i * STEP, 2) for i in range(round((CEILING - FLOOR) / STEP) + 1)]
     measured = {}
 
+    def capacity(size):
+        d = density(size)
+        return (target * d.printable_mm + (d.margin_y if spec["template"] in BLEED else 0)) * PX_PER_MM
+
     def fits(index):
         size = sizes[index]
         if size not in measured:
             measured[size] = browser.measure(document_html(spec, size))
-        return measured[size]["height"] <= target * density(size).printable_mm * PX_PER_MM
+        return measured[size]["height"] <= capacity(size)
 
     low, high = 0, len(sizes) - 1
     if not fits(low):
@@ -472,7 +479,7 @@ def fit(browser, spec, output):
     result = {"pages": pages, "target_pages": target, "font_pt": size, "fill": round(fill, 2)}
     if pages > target:
         d = density(size)
-        over = measured[size]["height"] - target * d.printable_mm * PX_PER_MM
+        over = measured[size]["height"] - capacity(size)
         line = d.size * d.leading * 96 / 72
         result["fit"] = "overflow"
         result["overflow_lines"] = max(1, math.ceil(over / line))
@@ -511,7 +518,7 @@ def source_warnings(spec):
 
 # ---------- Word ----------
 
-# ECMA-376 里 w:pPr 子元素的顺序。
+# ECMA-376 里 w:pPr、w:rPr、w:tblPr 和 w:tcPr 子元素的顺序：放错位置 Word 会提示文件损坏。
 PPR_ORDER = (
     "w:pStyle", "w:keepNext", "w:keepLines", "w:pageBreakBefore", "w:framePr", "w:widowControl", "w:numPr",
     "w:suppressLineNumbers", "w:pBdr", "w:shd", "w:tabs", "w:suppressAutoHyphens", "w:kinsoku", "w:wordWrap",
@@ -520,17 +527,52 @@ PPR_ORDER = (
     "w:textDirection", "w:textAlignment", "w:textboxTightWrap", "w:outlineLvl", "w:divId", "w:cnfStyle", "w:rPr",
     "w:sectPr", "w:pPrChange",
 )
+RPR_ORDER = (
+    "w:rStyle", "w:rFonts", "w:b", "w:bCs", "w:i", "w:iCs", "w:caps", "w:smallCaps", "w:strike", "w:dstrike",
+    "w:outline", "w:shadow", "w:emboss", "w:imprint", "w:noProof", "w:snapToGrid", "w:vanish", "w:webHidden",
+    "w:color", "w:spacing", "w:w", "w:kern", "w:position", "w:sz", "w:szCs", "w:highlight", "w:u", "w:effect",
+    "w:bdr", "w:shd", "w:fitText", "w:vertAlign", "w:rtl", "w:cs", "w:em", "w:lang", "w:eastAsianLayout",
+    "w:specVanish", "w:oMath",
+)
+TBLPR_ORDER = (
+    "w:tblStyle", "w:tblpPr", "w:tblOverlap", "w:bidiVisual", "w:tblStyleRowBandSize", "w:tblStyleColBandSize",
+    "w:tblW", "w:jc", "w:tblCellSpacing", "w:tblInd", "w:tblBorders", "w:shd", "w:tblLayout", "w:tblCellMar",
+    "w:tblLook", "w:tblCaption", "w:tblDescription", "w:tblPrChange",
+)
+TCPR_ORDER = (
+    "w:cnfStyle", "w:tcW", "w:gridSpan", "w:hMerge", "w:vMerge", "w:tcBorders", "w:shd", "w:noWrap", "w:tcMar",
+    "w:textDirection", "w:tcFitText", "w:vAlign", "w:hideMark", "w:headers", "w:cellIns", "w:cellDel",
+    "w:cellMerge", "w:tcPrChange",
+)
 
 
-def mix(color, ratio):
-    """强调色按比例混入白色，和 CSS 的 color-mix(in srgb, accent ratio, white) 一致，返回不带 # 的十六进制。"""
-    channels = (int(color[i:i + 2], 16) for i in (1, 3, 5))
-    return "".join(f"{round(c * ratio + 255 * (1 - ratio)):02X}" for c in channels)
+def mix(color, ratio, base="#ffffff"):
+    """颜色按比例混入底色（默认白色），和 CSS 的 color-mix(in srgb, color ratio, base) 一致，返回不带 # 的十六进制。"""
+    pairs = ((int(color[i:i + 2], 16), int(base[i:i + 2], 16)) for i in (1, 3, 5))
+    return "".join(f"{round(c * ratio + b * (1 - ratio)):02X}" for c, b in pairs)
+
+
+def text_em(text):
+    """粗估一行文字有几个字号宽。Word 没有按内容定宽的栏，时间轴的日期栏和侧栏的标题栏按它取宽度。"""
+    width = 0.0
+    for char in text:
+        if re.match(f"[{CJK}]", char):
+            width += 1.0
+        elif char.isdigit():
+            width += 0.58
+        elif char.isupper():
+            width += 0.68
+        elif char.isalpha():
+            width += 0.52
+        elif char.isspace():
+            width += 0.3
+        else:
+            width += 0.45
+    return width
 
 
 def docx_document(spec, size):
     from docx import Document
-    from docx.enum.table import WD_TABLE_ALIGNMENT
     from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX, WD_TAB_ALIGNMENT
     from docx.opc.constants import RELATIONSHIP_TYPE
     from docx.oxml import OxmlElement
@@ -541,16 +583,18 @@ def docx_document(spec, size):
     size = round(size * 2) / 2  # Word 字号以半磅为单位
     lang, template = spec["lang"], spec["template"]
     sans, serif = DOCX_FONTS[lang]["sans"], DOCX_FONTS[lang]["serif"]
-    accent = RGBColor.from_string(spec["accent"][1:].upper())
+    hex_accent = spec["accent"][1:].upper()
+    accent = RGBColor.from_string(hex_accent)
     muted = RGBColor.from_string("4E5969")
     ink = RGBColor.from_string("1D2129")
+    white = RGBColor.from_string("FFFFFF")
 
     document = Document()
     section = document.sections[0]
     section.page_width, section.page_height = Mm(PAGE_W), Mm(PAGE_H)
     section.top_margin = section.bottom_margin = Mm(d.margin_y)
     section.left_margin = section.right_margin = Mm(d.margin_x)
-    width = Mm(PAGE_W - 2 * d.margin_x)
+    width = (PAGE_W - 2 * d.margin_x) * PT_PER_MM  # 版心宽度，磅
 
     def set_fonts(element, fonts):
         properties = element.get_or_add_rPr()
@@ -569,7 +613,30 @@ def docx_document(spec, size):
     normal.paragraph_format.space_before = normal.paragraph_format.space_after = Pt(0)
     normal.paragraph_format.line_spacing = Pt(round(size * d.leading, 1))
 
-    def add_runs(paragraph, items, fonts=None, color=None, scale=1.0, bold=False):
+    def add_property(properties, tag, order=PPR_ORDER, **values):
+        # 属性元素有固定顺序，按 order 插到该在的位置。
+        element = OxmlElement(tag)
+        for key, value in values.items():
+            element.set(qn(f"w:{key}"), str(value))
+        properties.insert_element_before(element, *order[order.index(tag) + 1:])
+        return element
+
+    def line(borders, side, **values):
+        # 边框容器里只放一条线，直接追加。
+        element = OxmlElement(f"w:{side}")
+        for key, value in values.items():
+            element.set(qn(f"w:{key}"), str(value))
+        borders.append(element)
+
+    def sides(parent, values):
+        """依次写上、左、下、右四边，用于单元格内边距（缇）。"""
+        for side, value in zip(("top", "left", "bottom", "right"), values):
+            element = OxmlElement(f"w:{side}")
+            element.set(qn("w:w"), str(round(value * 20)))
+            element.set(qn("w:type"), "dxa")
+            parent.append(element)
+
+    def add_runs(paragraph, items, fonts=None, color=None, scale=1.0, bold=False, shade=None):
         for item in items:
             run = paragraph.add_run(item.text)
             if bold or item.bold:
@@ -580,6 +647,8 @@ def docx_document(spec, size):
                 run.font.color.rgb = color
             if fonts:
                 set_fonts(run._r, fonts)
+            if shade:
+                add_property(run._r.get_or_add_rPr(), "w:shd", RPR_ORDER, val="clear", color="auto", fill=shade)
             if item.todo:
                 run.font.highlight_color = WD_COLOR_INDEX.YELLOW
             if item.url:
@@ -588,106 +657,185 @@ def docx_document(spec, size):
                 run._r.addprevious(link)
                 link.append(run._r)
 
-    def paragraph(container, before=0.0, align=None):
+    def paragraph(container, before=0.0, align=None, indent=0.0):
         p = container.add_paragraph()
         p.paragraph_format.space_before = Pt(round(size * before, 1))
+        if indent:
+            p.paragraph_format.left_indent = Pt(indent)
         if align:
             p.alignment = align
         return p
 
-    def bullet(text):
+    def bullet(container, text, indent=0.0):
         # 缩进直接写在段落上：列表编号自带的缩进会盖过样式里的缩进。
-        p = document.add_paragraph(style="List Bullet")
-        p.paragraph_format.left_indent = Pt(size * 1.3)
+        p = container.add_paragraph(style="List Bullet")
+        p.paragraph_format.left_indent = Pt(indent + size * 1.3)
         p.paragraph_format.first_line_indent = Pt(-size * 0.9)
         add_runs(p, runs(text))
 
-    def add_property(properties, tag, **values):
-        # pPr 的子元素有固定顺序，放错位置 Word 会提示文件损坏。
-        element = OxmlElement(tag)
-        for key, value in values.items():
-            element.set(qn(f"w:{key}"), value)
-        properties.insert_element_before(element, *PPR_ORDER[PPR_ORDER.index(tag) + 1:])
-        return element
+    def grid_table(rows, widths, float_top=False):
+        """固定列宽、无边框、默认单元格无内边距的表格；float_top 让它浮在页面左上角，正文从它下面开始。"""
+        table = document.add_table(rows=rows, cols=len(widths))
+        table.autofit = False
+        properties = table._tbl.tblPr
+        total = properties.find(qn("w:tblW"))
+        total.set(qn("w:w"), str(round(sum(widths) * 20)))
+        total.set(qn("w:type"), "dxa")
+        if float_top:
+            add_property(properties, "w:tblpPr", TBLPR_ORDER, leftFromText=0, rightFromText=0, topFromText=0,
+                         bottomFromText=round(size * 20), vertAnchor="page", horzAnchor="page", tblpX=0, tblpY=0)
+            add_property(properties, "w:tblOverlap", TBLPR_ORDER, val="never")
+        sides(add_property(properties, "w:tblCellMar", TBLPR_ORDER), (0, 0, 0, 0))
+        for column, value in zip(table.columns, widths):
+            column.width = Pt(value)
+        return table
 
-    def heading_style(p):
-        """经典是浅色下划线，典雅是强调色下划线，现代是左侧色条加浅色底。"""
-        properties = p._p.get_or_add_pPr()
-        borders = add_property(properties, "w:pBdr")
-        if template == "modern":
-            line = OxmlElement("w:left")
-            values = {"val": "single", "sz": "18", "space": "4", "color": spec["accent"][1:]}
-            add_property(properties, "w:shd", val="clear", color="auto", fill=mix(spec["accent"], 0.09))
-        else:
-            line = OxmlElement("w:bottom")
-            values = {"val": "single", "sz": "6", "space": "1", "color": rule_color}
-        for key, value in values.items():
-            line.set(qn(f"w:{key}"), value)
-        borders.append(line)
+    def cell(target, value, margins=(0, 0, 0, 0), shade=None, rule=None):
+        """单元格宽度、内边距（磅，上左下右）、底色和左侧竖线；清掉自带的空段落，由调用方填内容。"""
+        target.width = Pt(value)
+        properties = target._tc.get_or_add_tcPr()
+        if rule:
+            line(add_property(properties, "w:tcBorders", TCPR_ORDER), "left", val="single", sz=4, space=0, color=rule)
+        if shade:
+            add_property(properties, "w:shd", TCPR_ORDER, val="clear", color="auto", fill=shade)
+        sides(add_property(properties, "w:tcMar", TCPR_ORDER), margins)
+        for p in target.paragraphs:
+            p._p.getparent().remove(p._p)
+        return target
 
     centered = template == "serif" and not spec["photo"]
     display_fonts = serif if template == "serif" else None  # 典雅模板的姓名、分节标题和条目标题用衬线
+    gap = size * 0.9  # 侧栏的标题、竖线和内容之间的距离
+    rail = 0.0  # 时间轴：日期栏加间距；侧栏：标题栏加间距
+    if template == "timeline":
+        dates = [text_em(e["date"]) for s in spec["sections"] for e in s.get("entries", []) if e["date"]]
+        rail = (min(max(dates, default=0), 10) + 1.3) * size
+    elif template == "sidebar":
+        rail = min(max(text_em(s["title"]) for s in spec["sections"]) * 1.06, 8) * size + gap
+    head_indent = rail + gap if template == "sidebar" else 0.0  # 侧栏的页头和内容左缘对齐
+
     body = document
+    if template == "banner":
+        # 色块页头浮在页面顶端、左右出血，和 PDF 一样；内边距让文字仍落在版心里。
+        margin_x, margin_y = d.margin_x * PT_PER_MM, d.margin_y * PT_PER_MM
+        top, bottom = margin_y + size * 0.3, size * 1.1
+        photo_w = (31 * PT_PER_MM + margin_x) if spec["photo"] else 0
+        band = grid_table(1, [PAGE_W * PT_PER_MM - photo_w] + ([photo_w] if photo_w else []), float_top=True)
+        cells = band.rows[0].cells
+        body = cell(cells[0], PAGE_W * PT_PER_MM - photo_w, (top, margin_x, bottom, 0 if photo_w else margin_x), hex_accent)
+        if photo_w:
+            # 照片格左边框用同色，盖住两格底色之间的细缝。
+            picture = cell(cells[1], photo_w, (top, 0, bottom, margin_x), hex_accent, rule=hex_accent).add_paragraph()
+    elif spec["photo"]:
+        photo_w = 30 * PT_PER_MM
+        cells = grid_table(1, [width - photo_w, photo_w]).rows[0].cells
+        body = cell(cells[0], width - photo_w)
+        picture = cell(cells[1], photo_w).add_paragraph()
     if spec["photo"]:
-        table = document.add_table(rows=1, cols=2)
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.autofit = False
-        left, right = table.rows[0].cells
-        left.width, right.width = width - Mm(30), Mm(30)
-        body = left
-        left.paragraphs[0]._p.getparent().remove(left.paragraphs[0]._p)
-        picture = right.paragraphs[0]
+        # 正文是固定行距，照片段落要改回单倍行距，否则照片被裁成一行高。
+        picture.paragraph_format.line_spacing = 1.0
         picture.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         picture.add_run().add_picture(str(spec["photo"]), width=Mm(25))
+    on_band = template == "banner"
     align = WD_ALIGN_PARAGRAPH.CENTER if centered else None
-    add_runs(paragraph(body, align=align), runs(spec["name"]), display_fonts, accent if template == "modern" else None, 2.1, True)
+    name_color = {"modern": accent, "banner": white}.get(template)
+    name_scale = {"timeline": 2.2, "sidebar": 2.2, "banner": 2.3}.get(template, 2.1)
+    add_runs(paragraph(body, align=align, indent=head_indent), runs(spec["name"]), display_fonts, name_color, name_scale, True)
     if spec["headline"]:
-        add_runs(paragraph(body, 0.15, align), runs(spec["headline"]), scale=1.05)
+        add_runs(paragraph(body, 0.15, align, head_indent), runs(spec["headline"]), color=white if on_band else None, scale=1.05)
     if spec["contacts"]:
-        p = paragraph(body, 0.25, align)
+        p = paragraph(body, 0.25, align, head_indent)
+        contact_color = RGBColor.from_string(mix("#ffffff", 0.82, spec["accent"])) if on_band else muted
         for index, contact in enumerate(spec["contacts"]):
             if index:
-                add_runs(p, [Run("  |  ")], color=muted)
-            add_runs(p, contact_runs(contact), color=muted)
+                add_runs(p, [Run("  |  ")], color=contact_color)
+            add_runs(p, contact_runs(contact), color=contact_color)
 
     heading_color = ink if template == "modern" else accent
-    rule_color = mix(spec["accent"], 0.45) if template == "classic" else spec["accent"][1:]
-    for section_spec in spec["sections"]:
-        heading = paragraph(document, 0.8)
-        heading.paragraph_format.space_after = Pt(round(size * 0.3, 1))
-        heading.paragraph_format.keep_with_next = True
+    rule_color = mix(spec["accent"], 0.45) if template in ("classic", "banner") else hex_accent
+    entry_color = accent if template in ("modern", "timeline") else None
+    indent = rail if template == "timeline" else 0.0  # 时间轴的内容都从日期栏右边开始
+    inner = width - rail - gap if template == "sidebar" else width  # 条目日期右对齐的位置
+
+    def heading_style(p):
+        """经典和色块页头是浅色下划线，典雅是强调色下划线，时间轴是色签下的强调色粗线，现代是左侧色条加浅色底。"""
+        properties = p._p.get_or_add_pPr()
+        borders = add_property(properties, "w:pBdr")
+        if template == "modern":
+            line(borders, "left", val="single", sz=18, space=4, color=hex_accent)
+            add_property(properties, "w:shd", val="clear", color="auto", fill=mix(spec["accent"], 0.09))
+        elif template == "timeline":
+            line(borders, "bottom", val="single", sz=12, space=0, color=hex_accent)
+        else:
+            line(borders, "bottom", val="single", sz=6, space=1, color=rule_color)
+
+    if template == "sidebar":
+        # 侧栏：每个分节一行，左格是右对齐的标题，右格左边框就是贯通的竖线。
+        grid = grid_table(0, [rail, width - rail])
+        rule = mix(spec["accent"], 0.3, "#d9d9d9")
+    for number, section_spec in enumerate(spec["sections"]):
         title = section_spec["title"].upper() if template == "serif" and lang == "en" else section_spec["title"]
-        add_runs(heading, runs(title), display_fonts, heading_color, 1.1, True)
-        heading_style(heading)
+        if template == "sidebar":
+            title_cell, container = grid.add_row().cells
+            cell(title_cell, rail, (0, 0, 0, gap))
+            cell(container, width - rail, (0, gap, 0, 0), rule=rule)
+            heading = paragraph(title_cell, 1.0 if number == 0 else 0.85, WD_ALIGN_PARAGRAPH.RIGHT)
+            add_runs(heading, runs(title), None, accent, 1.06, True)
+        else:
+            container = document
+            heading = paragraph(document, 0.8)
+            heading.paragraph_format.space_after = Pt(round(size * 0.3, 1))
+            heading.paragraph_format.keep_with_next = True
+            if template == "timeline":
+                add_runs(heading, [Run("\u00a0\u00a0")] + runs(title) + [Run("\u00a0\u00a0")], None, white, 1.1, True, hex_accent)
+            else:
+                add_runs(heading, runs(title), display_fonts, heading_color, 1.1, True)
+            heading_style(heading)
         kind = section_spec["kind"]
         if kind == "text":
-            add_runs(paragraph(document), runs(section_spec["text"]))
+            add_runs(paragraph(container, indent=indent), runs(section_spec["text"]))
         elif kind == "bullets":
             for text in section_spec["bullets"]:
-                bullet(text)
+                bullet(container, text, indent)
         elif kind == "items":
             for item in section_spec["items"]:
-                p = paragraph(document)
+                p = paragraph(container, indent=indent)
                 if item["label"]:
                     add_runs(p, [Run(item["label"] + ("：" if lang == "zh" else ": "), bold=True)])
                 add_runs(p, runs(item["text"]))
         else:
-            for number, entry in enumerate(section_spec["entries"]):
-                p = paragraph(document, 0.45 if number else 0)
+            for count, entry in enumerate(section_spec["entries"]):
+                p = paragraph(container, 0.45 if count else 0)
                 p.paragraph_format.keep_with_next = True
-                p.paragraph_format.tab_stops.add_tab_stop(width, WD_TAB_ALIGNMENT.RIGHT)
-                add_runs(p, runs(entry["title"]), display_fonts, accent if template == "modern" else None, bold=True)
-                for key in ("subtitle", "location"):
-                    if entry[key]:
-                        add_runs(p, [Run("    ")] + runs(entry[key]))
-                if entry["date"]:
-                    add_runs(p, [Run("\t")] + runs(entry["date"]), color=muted)
+                if template == "timeline":
+                    # 日期在悬挂缩进里，制表位跳到日期栏右边的内容起点。
+                    p.paragraph_format.left_indent = Pt(rail)
+                    p.paragraph_format.first_line_indent = Pt(-rail)
+                    p.paragraph_format.tab_stops.add_tab_stop(Pt(rail))
+                    add_runs(p, runs(entry["date"] or "") + [Run("\t")], color=muted)
+                else:
+                    p.paragraph_format.tab_stops.add_tab_stop(Pt(inner), WD_TAB_ALIGNMENT.RIGHT)
+                add_runs(p, runs(entry["title"]), display_fonts, entry_color, bold=True)
+                extras = [entry[key] for key in ("subtitle", "location") if entry[key]]
+                date = entry["date"] if template != "timeline" else None
+                # 一行放不下时和 PDF 一样：日期留在第一行右端，副标题和地点换到第二行。
+                wide = bool(date and extras) and size * (
+                    text_em(entry["title"]) * 1.05 + sum(text_em(extra) + 1.2 for extra in extras) + text_em(date) + 1.5) > inner
+                if wide:
+                    add_runs(p, [Run("\t")] + runs(date), color=muted)
+                    p.add_run().add_break()
+                for index, extra in enumerate(extras):
+                    add_runs(p, ([Run("    ")] if index or not wide else []) + runs(extra))
+                if date and not wide:
+                    add_runs(p, [Run("\t")] + runs(date), color=muted)
                 if entry["note"]:
-                    note = paragraph(document)
+                    note = paragraph(container, indent=indent)
                     note.paragraph_format.keep_with_next = bool(entry["bullets"])
                     add_runs(note, runs(entry["note"]), color=muted)
                 for text in entry["bullets"]:
-                    bullet(text)
+                    bullet(container, text, indent)
+        if template == "sidebar":
+            container.paragraphs[0].paragraph_format.space_before = heading.paragraph_format.space_before
     core = document.core_properties
     core.title, core.author = spec["name"], spec["name"]
     return document

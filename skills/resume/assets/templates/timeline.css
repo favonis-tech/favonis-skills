@@ -1,0 +1,56 @@
+/* 时间轴：条目的日期单独占左栏，分节标题是压在强调色细线上的色签，条目标题用强调色。 */
+/* 整页是两列网格，分节、内容和条目逐层用 subgrid 继承这两列：日期栏按全文最长的日期定宽，过长才折行。 */
+.sheet {
+  display: grid;
+  grid-template-columns: fit-content(10em) minmax(0, 1fr);
+  column-gap: 1em;
+}
+.head,
+.section,
+.section > h2,
+.section > .body,
+.entry {
+  grid-column: 1 / -1;
+}
+.section,
+.section > .body,
+.entry {
+  display: grid;
+  grid-template-columns: subgrid;
+}
+.name {
+  font-size: 2.2em;
+}
+.section > h2 {
+  display: flex;
+  border-bottom: 1.5px solid var(--accent);
+  line-height: 1.5;
+}
+.section > h2 > span {
+  padding: 0 0.7em;
+  background: var(--accent);
+  color: #fff;
+  letter-spacing: 0.06em;
+}
+.entry-head {
+  display: contents;
+}
+.entry-date {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  white-space: normal;
+}
+.entry-main,
+.entry-note,
+.entry > .bullets,
+.body > .items,
+.body > .bullets,
+.body > .text {
+  grid-column: 2;
+}
+.entry-main {
+  break-after: avoid;
+}
+.entry-title {
+  color: var(--accent);
+}

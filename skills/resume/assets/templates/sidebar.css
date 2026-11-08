@@ -1,0 +1,45 @@
+/* 侧栏：分节标题放在左栏、右对齐，一条贯通的细竖线隔开标题和内容，页头与内容左缘对齐。 */
+/* 整页是两列网格，分节用 subgrid 继承这两列：左栏按最长的分节标题定宽，过长才折行。 */
+.sheet {
+  --gap: 0.9em;
+  --space: calc(var(--size) * 0.85);
+  --rule: color-mix(in srgb, var(--accent) 30%, #d9d9d9);
+  display: grid;
+  grid-template-columns: fit-content(8em) minmax(0, 1fr);
+  column-gap: var(--gap);
+}
+.head {
+  grid-column: 2;
+  padding-left: calc(var(--gap) + 1px);
+}
+.name {
+  font-size: 2.2em;
+}
+.section {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  margin-top: 0;
+}
+.head + .section {
+  margin-top: 1em;
+}
+.section + .section > * {
+  padding-top: var(--space);
+}
+.section > h2 {
+  margin: 0;
+  color: var(--accent);
+  font-size: 1.06em;
+  text-align: right;
+  letter-spacing: 0.04em;
+  overflow-wrap: normal;
+}
+:lang(en) .section > h2 {
+  letter-spacing: 0.01em;
+}
+.section > .body {
+  border-left: 1px solid var(--rule);
+  padding-left: var(--gap);
+}

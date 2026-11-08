@@ -1,3 +1,4 @@
+import base64
 import importlib.util
 import json
 import os
@@ -8,6 +9,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 SCRIPT = Path(__file__).resolve().parents[1] / "skills/resume/scripts/resume.py"
 spec = importlib.util.spec_from_file_location("resume", SCRIPT)
@@ -47,6 +49,8 @@ sections:
     bullets: [2024 年 CCPC 省赛银奖]
 """
 BULLET = "定位订单详情接口慢查询的根因是联表加深分页，改为游标分页并补齐覆盖索引，P99 延迟由 820 ms 降到 160 ms，已全量上线"
+PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
 def write(directory, text, name="简历.yaml"):
@@ -149,32 +153,83 @@ class SourceTests(unittest.TestCase):
         self.assertLess(floor.margin_y, ceiling.margin_y)
         self.assertEqual(resume.mix("#1f4e79", 1), "1F4E79")
         self.assertEqual(resume.mix("#000000", 0.5), "80" * 3)
+        self.assertEqual(resume.mix("#ffffff", 0.5, "#000000"), "80" * 3)
+
+    def test_text_width_estimate(self):
+        self.assertEqual(resume.text_em("教育背景"), 4)
+        self.assertTrue(8 < resume.text_em("2024.07 – 2025.06") < 10)
+        self.assertLess(resume.text_em("Skills"), resume.text_em("SKILLS"))
+
+
+ORDERS = {"pPr": resume.PPR_ORDER, "rPr": resume.RPR_ORDER, "tblPr": resume.TBLPR_ORDER, "tcPr": resume.TCPR_ORDER}
+
+
+def fills(root, path):
+    return {element.get(W + "fill") for element in root.iterfind(path)}
 
 
 @unittest.skipUnless(HAS_DOCX, "needs python-docx")
 class DocxTests(unittest.TestCase):
+    def word(self, directory, source, template):
+        source.update(template=template, accent=resume.TEMPLATE_ACCENTS[template])
+        path = Path(directory, f"{template}.docx")
+        resume.docx_document(source, 10.4).save(path)
+        with zipfile.ZipFile(path) as archive:
+            return archive.read("word/document.xml").decode(), archive.read("word/_rels/document.xml.rels").decode()
+
+    def assert_property_order(self, root):
+        # 属性元素的子元素顺序错了 Word 会报文件损坏。
+        for element in root.iter():
+            name = element.tag.removeprefix(W)
+            if name in ORDERS:
+                children = ["w:" + child.tag.removeprefix(W) for child in element]
+                positions = [ORDERS[name].index(child) for child in children]
+                self.assertEqual(positions, sorted(positions), f"{name}: {children}")
+
     def test_word_version_structure(self):
         with tempfile.TemporaryDirectory() as directory:
             source = resume.read_source(write(directory, SOURCE.replace("GPA 3.70/4.0", "GPA 【待补充】")))
-            for template in resume.TEMPLATE_ACCENTS:
-                source.update(template=template, accent=resume.TEMPLATE_ACCENTS[template])
-                path = Path(directory, f"{template}.docx")
-                resume.docx_document(source, 10.4).save(path)
-                with zipfile.ZipFile(path) as archive:
-                    xml = archive.read("word/document.xml").decode()
-                    rels = archive.read("word/_rels/document.xml.rels").decode()
+            for template, accent in resume.TEMPLATE_ACCENTS.items():
+                xml, rels = self.word(directory, source, template)
+                root = ElementTree.fromstring(xml)
                 with self.subTest(template=template):
                     self.assertIn("<w:hyperlink", xml)
                     self.assertIn("https://github.com/linxiao-dev", rels)
                     self.assertIn('w:highlight w:val="yellow"', xml)
-                    self.assertEqual("<w:shd " in xml, template == "modern", "only modern headings sit on a tinted band")
-                    # 段落属性的子元素顺序错了 Word 会报文件损坏：边框和底纹都要在间距前面。
-                    for chunk in xml.split("<w:pPr>")[1:]:
-                        chunk = chunk.split("</w:pPr>")[0]
-                        if "<w:pBdr>" in chunk:
-                            self.assertLess(chunk.index("<w:pBdr>"), chunk.index("<w:spacing"))
-                        if "<w:shd " in chunk:
-                            self.assertLess(chunk.index("<w:shd "), chunk.index("<w:spacing"))
+                    self.assert_property_order(root)
+                    accent = accent[1:].upper()
+                    # 底纹只出现在各自的位置：现代的标题底带、时间轴的色签、色块页头的单元格。
+                    self.assertEqual(bool(fills(root, f".//{W}pPr/{W}shd")), template == "modern")
+                    self.assertEqual(fills(root, f".//{W}rPr/{W}shd"), {accent} if template == "timeline" else set())
+                    self.assertEqual(fills(root, f".//{W}tcPr/{W}shd"), {accent} if template == "banner" else set())
+                    floating = root.find(f".//{W}tblpPr")
+                    self.assertEqual(floating is not None and floating.get(W + "vertAnchor"), template == "banner" and "page")
+                    self.assertEqual(root.find(f".//{W}tcBorders/{W}left") is not None, template == "sidebar")
+
+    def test_word_photo_keeps_its_size(self):
+        # 正文是固定行距，照片段落要单倍行距才不被裁成一行高；表格要写列宽，LibreOffice 按列宽排。
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "me.png").write_bytes(PNG)
+            source = resume.read_source(write(directory, "photo: me.png\n" + SOURCE))
+            for template in resume.TEMPLATE_ACCENTS:
+                root = ElementTree.fromstring(self.word(directory, source, template)[0])
+                with self.subTest(template=template):
+                    holders = [p for p in root.iter(W + "p") if p.find(f".//{W}drawing") is not None]
+                    self.assertEqual(len(holders), 1)
+                    self.assertEqual(holders[0].find(f"{W}pPr/{W}spacing").get(W + "lineRule"), "auto")
+                    text, photo = (int(column.get(W + "w")) for column in root.find(f".//{W}tblGrid"))
+                    self.assertGreater(text, 3 * photo)
+
+    def test_long_entry_head_moves_the_subtitle_down(self):
+        # 标题行放不下时日期留在第一行右端，副标题换到第二行，不让日期被挤断。
+        long = SOURCE.replace("subtitle: 后端开发实习生", "subtitle: 后端开发实习生 · 交易中台订单查询与夜间对账任务方向 · 浙江杭州滨江区")
+        with tempfile.TemporaryDirectory() as directory:
+            wide = self.word(directory, resume.read_source(write(directory, long)), "sidebar")[0]
+            short = self.word(directory, resume.read_source(write(directory, SOURCE)), "classic")[0]
+        head = next(chunk for chunk in wide.split("<w:p>") if "某电商平台" in chunk)
+        self.assertLess(head.index("2025.07"), head.index("<w:br/>"))
+        self.assertLess(head.index("<w:br/>"), head.index("交易中台"))
+        self.assertNotIn("<w:br/>", next(chunk for chunk in short.split("<w:p>") if "某电商平台" in chunk))
 
 
 @unittest.skipUnless(HAS_BROWSER, "needs Chromium (RESUME_CHROMIUM or chromium on PATH), Playwright and PyMuPDF")
@@ -217,6 +272,61 @@ class BuildTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertFalse(json.loads(result.stdout)["ok"])
             self.assertEqual(run_script(directory, "简历.yaml", "--output", "简历.docx").returncode, 2)
+
+    def test_screen_width_matches_the_page(self):
+        # 字号先按屏幕上量的高度挑选：模板若改了版心宽度，量出的行数和打印出来的就对不上。
+        with tempfile.TemporaryDirectory() as directory:
+            source = resume.read_source(write(directory, SOURCE))
+        expected = (resume.PAGE_W - 2 * resume.density(10.4).margin_x) * resume.PX_PER_MM
+        browser = resume.Browser()
+        try:
+            for template, accent in resume.TEMPLATE_ACCENTS.items():
+                source.update(template=template, accent=accent)
+                browser.load(resume.document_html(source, 10.4))
+                width = browser.page.evaluate("""() => {
+                  const sheet = document.querySelector('.sheet'), style = getComputedStyle(sheet);
+                  return sheet.getBoundingClientRect().width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+                }""")
+                self.assertAlmostEqual(width, expected, delta=1, msg=template)
+        finally:
+            browser.close()
+
+    def test_column_layouts(self):
+        """时间轴的日期和条目各成一列，侧栏的分节标题在内容左侧并与页头对齐，色块页头铺到纸边；三者都排满一页。"""
+        import pymupdf
+
+        def lines(path):
+            """每行文字 → (左缘, 底边, 右缘)。中文逐字成段，个别字形的竖直范围不准，所以左缘和底边取首字、右缘取末字。"""
+            with pymupdf.open(path) as document:
+                page = document[0]
+                corner = page.get_pixmap(clip=pymupdf.Rect(0, 0, 4, 4)).pixel(1, 1)
+                found = {}
+                for block in page.get_text("dict")["blocks"]:
+                    for line in block.get("lines", []):
+                        first, last = line["spans"][0]["bbox"], line["spans"][-1]["bbox"]
+                        found.setdefault("".join(span["text"] for span in line["spans"]).strip(), (first[0], first[3], last[2]))
+            return found, corner
+
+        with tempfile.TemporaryDirectory() as directory:
+            write(directory, with_bullets(10))
+            pages = {}
+            for template in ("timeline", "sidebar", "banner"):
+                result = run_script(directory, "简历.yaml", "--output", f"{template}.pdf", "--template", template)
+                report = json.loads(result.stdout)
+                self.assertEqual((report["fit"], report["pages"]), ("ok", 1), report)
+                self.assertGreater(report["fill"], 0.85, template)
+                pages[template] = lines(Path(directory, f"{template}.pdf"))
+        timeline, _ = pages["timeline"]
+        self.assertAlmostEqual(timeline["2022.10 – 2026.06"][0], timeline["2025.07 – 2025.12"][0], delta=0.5)
+        self.assertAlmostEqual(timeline["浙江工业大学"][0], timeline["某电商平台"][0], delta=0.5)
+        self.assertGreater(timeline["浙江工业大学"][0], timeline["2022.10 – 2026.06"][2])
+        sidebar, _ = pages["sidebar"]
+        self.assertLess(sidebar["教育背景"][2], sidebar["浙江工业大学"][0])
+        self.assertAlmostEqual(sidebar["教育背景"][1], sidebar["浙江工业大学"][1], delta=2)
+        self.assertAlmostEqual(sidebar["林晓"][0], sidebar["浙江工业大学"][0], delta=1)
+        _, corner = pages["banner"]
+        accent = bytes.fromhex(resume.TEMPLATE_ACCENTS["banner"][1:])
+        self.assertTrue(all(abs(a - b) <= 3 for a, b in zip(corner, accent)), f"the band reaches the paper's corner: {corner}")
 
     @unittest.skipUnless(HAS_DOCX and HAS_OFFICE, "needs python-docx and LibreOffice")
     def test_word_version_fits_the_pages(self):

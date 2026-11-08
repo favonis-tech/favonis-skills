@@ -1,0 +1,37 @@
+/* 色块页头：强调色通栏铺满首页顶部，姓名和联系方式反白；分节标题用强调色，下压浅色细线。 */
+/* 左右页边距改由 .sheet 的内边距承担，页头才能左右出血；首页上边距归零，页头补上同样的高度（脚本按 BLEED 计算可用高度）。 */
+@page {
+  margin-right: 0;
+  margin-left: 0;
+}
+@page :first {
+  margin-top: 0;
+}
+.sheet {
+  width: calc(var(--sheet) + 2 * var(--margin-x));
+  padding: 0 var(--margin-x);
+}
+.head {
+  margin: 0 calc(-1 * var(--margin-x));
+  padding: calc(var(--margin-y) + 0.3em) var(--margin-x) 1.1em;
+  background: var(--accent);
+  color: #fff;
+}
+.name {
+  font-size: 2.3em;
+  letter-spacing: 0.04em;
+}
+.contacts {
+  color: color-mix(in srgb, #fff 82%, var(--accent));
+}
+.photo {
+  border: 0.6mm solid #fff;
+}
+.head + .section {
+  margin-top: 1em;
+}
+.section > h2 {
+  padding-bottom: 0.12em;
+  border-bottom: 1px solid var(--rule);
+  color: var(--accent);
+}

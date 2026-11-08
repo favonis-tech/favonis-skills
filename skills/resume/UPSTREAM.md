@@ -16,3 +16,7 @@ Ideas only, rewritten in this package's own words:
 - [Jichengyuuuuu/resume-builder-skill](https://github.com/Jichengyuuuuu/resume-builder-skill): skill groups by role, bold-label bullets, follow-up advice from a hiring manager's view.
 - [career-ops-hq/career-ops](https://github.com/career-ops-hq/career-ops) (MIT): job titles unchanged across tailored versions, the JD archived next to the version, gaps told to the user rather than papered over.
 - [SankaiAI/ats-optimized-resume-agent-skill](https://github.com/SankaiAI/ats-optimized-resume-agent-skill) (MIT): the pass that makes bullets read as written by a person.
+
+Layout ideas, with no template file, artwork or text taken:
+
+- [乔布简历商务模板](https://cv.qiaobutang.com/tpl): the `timeline`, `sidebar` and `banner` templates follow three layouts common among its most downloaded business templates: dates in a left column, section titles in a left column, and a colored band across the top. Their CSS and Word code are written for this package.
