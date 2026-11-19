@@ -1,12 +1,12 @@
 # Explainer videos (am video, 3Blue1Brown style)
 
-Read this when SKILL.md section 7 sends you here. Use the full sandbox command from SKILL.md section 2 for every `am` command, with `AM_HOME=/tmp/answer-me-with-html`, `AM_NO_OPEN=1` and `AM_NO_UPDATE_CHECK=1`. Replace the example's `/skills/answer-me-with-html` prefix with the returned `sandbox_path` if it differs. Run in `/project` and explicitly set the output under `outputs/`.
+Read this when SKILL.md section 7 sends you here. Use the full sandbox command from SKILL.md section 2 for every `am` command, with `AM_HOME="$TMPDIR/answer-me-with-html"`, `AM_NO_OPEN=1` and `AM_NO_UPDATE_CHECK=1`. Run from the project folder and explicitly set the output under `outputs/`.
 
 A video draft has the same format as a page draft, with one extra rule: lines starting with `>` are narration, one beat per line.
 
 ````bash
 mkdir -p outputs
-AM_HOME=/tmp/answer-me-with-html AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node /skills/answer-me-with-html/scripts/am.mjs video - --no-open -o outputs/explainer.html <<'AM_EOF'
+AM_HOME="$TMPDIR/answer-me-with-html" AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node "$SKILLS_DIR/answer-me-with-html/scripts/am.mjs" video - --no-open -o outputs/explainer.html <<'AM_EOF'
 ---
 title: The TCP three-way handshake
 subtitle: Why three

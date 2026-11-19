@@ -13,6 +13,7 @@ description: >-
   page is quick and cheap to make. Also for explainer videos ("make a video", "做个视频") and for changing
   its settings. Skip only for small talk, a trivial one-line answer, or when the user asks for plain
   text.
+programs: [node]
 localizations:
   zh-CN:
     display-name: 用网页回答
@@ -52,13 +53,13 @@ Otherwise answer in plain text. When unsure: the more the question "needs a pict
 
 ## 2. Workflow (one Bash call)
 
-The CLI is bundled in this skill's directory as `scripts/am.mjs`, a single file that needs only Node.js 20+. `skill_read` with only this skill's `name` returns the instructions, the package file list and `sandbox_path`; the examples use the default `/skills/answer-me-with-html`, so replace that prefix if the returned path differs. `skill_read` with `name` and a package-relative `path` from the file list, such as `references/video.md`, reads that package file. Below, `am` always means:
+The CLI is bundled in this skill's directory as `scripts/am.mjs`, a single file that needs only Node.js 20+. `skill_read` with only this skill's `name` returns the instructions and the package file list. `skill_read` with `name` and a package-relative `path` from the file list, such as `references/video.md`, reads that package file. Below, `am` always means:
 
 ```bash
-AM_HOME=/tmp/answer-me-with-html AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node /skills/answer-me-with-html/scripts/am.mjs
+AM_HOME="$TMPDIR/answer-me-with-html" AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node "$SKILLS_DIR/answer-me-with-html/scripts/am.mjs"
 ```
 
-Run it with the `shell` tool in `/project`. The skill directory is read-only; scratch state stays under `/tmp/answer-me-with-html`, and every deliverable gets an explicit `-o outputs/<descriptive-name>.html`. Preserve the upstream themes, layout, diagrams and page controls; do not restyle them to match the Favonis app.
+Run it with the `shell` tool from the project folder. The skill directory is read-only; scratch state stays under `$TMPDIR/answer-me-with-html`, and every deliverable gets an explicit `-o outputs/<descriptive-name>.html`. Preserve the upstream themes, layout, diagrams and page controls; do not restyle them to match the Favonis app.
 
 1. List 3–8 panels in your head; each panel answers one sub-question only. The draft is written in the language of the user's question, and the page labels, `<html lang>` and the STE rules follow the draft language automatically. Write `lang:` in the frontmatter (`en`, `zh`, `zh-Hant`, `ja`, or any other tag such as `fr`) when the user writes a Latin-script language other than English, when a short Chinese text does not show whether it is Traditional, or when the exact tag matters; `references/draft.md` lists what detection reads.
 2. Choose components by the shape of the information (see section 4).
@@ -66,7 +67,7 @@ Run it with the `shell` tool in `/project`. The skill directory is read-only; sc
 
 ````bash
 mkdir -p outputs
-AM_HOME=/tmp/answer-me-with-html AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node /skills/answer-me-with-html/scripts/am.mjs render - --no-open -o outputs/explanation.html <<'AM_EOF'
+AM_HOME="$TMPDIR/answer-me-with-html" AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node "$SKILLS_DIR/answer-me-with-html/scripts/am.mjs" render - --no-open -o outputs/explanation.html <<'AM_EOF'
 ---
 title: Title
 ---

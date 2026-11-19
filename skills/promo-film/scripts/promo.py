@@ -1,8 +1,8 @@
 """Check, build and render an animated film written for the bundled engine; every command prints a JSON report.
 
-    python promo.py check FILM.js [--sheet PNG] [--frames N | --at T,T,...]
-    python promo.py build FILM.js --out outputs/NAME.html [--audio AUDIO]
-    python promo.py render FILM.js --out outputs/NAME.mp4 [--audio AUDIO] [--quality draft|720p|1080p] [--budget SECONDS]
+    $FAVONIS_PYTHON promo.py check FILM.js [--sheet PNG] [--frames N | --at T,T,...]
+    $FAVONIS_PYTHON promo.py build FILM.js --out outputs/NAME.html [--audio AUDIO]
+    $FAVONIS_PYTHON promo.py render FILM.js --out outputs/NAME.mp4 [--audio AUDIO] [--quality draft|720p|1080p] [--budget SECONDS]
 """
 
 import argparse

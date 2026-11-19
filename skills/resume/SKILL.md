@@ -8,6 +8,7 @@ description: >-
   plus Word on request, that the bundled script fits to the page. Also critiques or rewrites an
   existing resume. Not for cover letters, LinkedIn profiles, portfolios or academic CVs longer than two
   pages.
+programs: [render-office]
 localizations:
   zh-CN:
     display-name: 简历制作
@@ -33,11 +34,11 @@ Facts come from the user, wording from references/writing.md, layout from the sc
 
 ## Environment
 
-- The package directory is the `sandbox_path` returned by `skill_read` (normally `/skills/resume`) and is read-only. Read [references/writing.md](references/writing.md) before writing, rewriting, tailoring or critiquing content, and [references/source.md](references/source.md) before writing a source; read both in the same batch when you will build.
-- Build with `shell` in `/project`, with project-relative paths and a `timeout_ms` of about 2 minutes (4 with `--docx`):
+- The package directory is `$SKILLS_DIR/resume` and is read-only. Read [references/writing.md](references/writing.md) before writing, rewriting, tailoring or critiquing content, and [references/source.md](references/source.md) before writing a source; read both in the same batch when you will build.
+- Build with `shell` from the project folder, with project-relative paths and a `timeout_ms` of about 2 minutes (4 with `--docx`):
 
   ```bash
-  python /skills/resume/scripts/resume.py 简历/林晓-后端开发.yaml --output 简历/林晓-后端开发.pdf
+  $FAVONIS_PYTHON "$SKILLS_DIR/resume/scripts/resume.py" 简历/林晓-后端开发.yaml --output 简历/林晓-后端开发.pdf
   ```
 
   `--docx 简历/林晓-后端开发.docx` also writes a Word version; `--template` with another name from source.md "Templates" (such as `classic`, `timeline` or `banner`) overrides the template when the user wants to compare looks. The script needs PyYAML, PyMuPDF and Playwright's Chromium, plus python-docx and LibreOffice (`render-office`) for Word, which the sandbox image provides. If an import fails, the sandbox was created from an older image: tell the user and stop instead of installing packages.

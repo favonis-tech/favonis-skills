@@ -18,6 +18,23 @@ localizations:
 
 每种语言的 `display-name` 和 `description` 必填，`keywords` 可省。模型读取技能时只拿到正文，看不到这些文案。`answer-me-with-html` 由 `scripts/sync-skills.py` 从维护 fork 整包同步，它的文案改在 fork 里。
 
+## 命令写法
+
+技能在云端电脑上跑，也在文件夹项目里用户自己的电脑上跑，命令要两边原样能用，不写只在云端电脑上成立的路径：
+
+- 技能包的位置写 `$SKILLS_DIR/<name>/`，不写 `/skills/<name>/`。
+- Python 脚本用 `$FAVONIS_PYTHON` 运行（云端是 `python`，用户电脑上是 Favonis 自带的 Python），不写裸的 `python`。
+- 中间文件放 `$TMPDIR`，不写 `/tmp`；项目里的文件写相对路径，不写 `/project`。
+- 脚本按自己所在的位置找包里的其他文件。
+
+技能要用外部程序（FFmpeg、LaTeX 这类）时，在 frontmatter 里声明程序名：
+
+```yaml
+programs: [ffmpeg, xelatex]
+```
+
+用户电脑上没有其中某个程序时，Favonis 会告诉模型把那一步放到云端电脑上做。
+
 ## 测试
 
 在装有技能依赖的环境（Favonis 沙箱或同等的 Python 环境）里运行：
