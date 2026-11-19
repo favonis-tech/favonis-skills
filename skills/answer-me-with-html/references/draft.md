@@ -11,7 +11,7 @@ The draft language follows the language of the user's question: an English quest
 Take the source draft from the HTML's `#am-source`, replace only the matching `##` section, and overwrite the page in place:
 
 ````bash
-AM_HOME=/tmp/answer-me-with-html AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node /skills/answer-me-with-html/scripts/am.mjs patch outputs/explanation.html --no-open --panel "Panel title" <<'AM_EOF'
+AM_HOME="$TMPDIR/answer-me-with-html" AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node "$SKILLS_DIR/answer-me-with-html/scripts/am.mjs" patch outputs/explanation.html --no-open --panel "Panel title" <<'AM_EOF'
 ## A Panel title
 New content
 AM_EOF

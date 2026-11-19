@@ -1,6 +1,6 @@
 """Synthesize a cue-synced score from a timeline JSON and print a JSON report.
 
-    python score.py TIMELINE.json --out audio/score.mp3 [--seed N]
+    $FAVONIS_PYTHON score.py TIMELINE.json --out audio/score.mp3 [--seed N]
 
 The timeline gives the tempo, sections with chords and energy, hits and sound-effect cues in seconds.
 Every hit and cue lands on its exact time; harmony and rhythm follow each section's bar grid.

@@ -1,9 +1,9 @@
 # Settings, scratch cleanup and updates in Favonis
 
-Use the `shell` tool in `/project`. The command below assumes the default skill directory; replace `/skills/answer-me-with-html` with the `sandbox_path` that `skill_read` returns when called without `path`, if it differs. For each CLI command, use:
+Use the `shell` tool from the project folder. For each CLI command, use:
 
 ```bash
-AM_HOME=/tmp/answer-me-with-html AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node /skills/answer-me-with-html/scripts/am.mjs
+AM_HOME="$TMPDIR/answer-me-with-html" AM_NO_OPEN=1 AM_NO_UPDATE_CHECK=1 node "$SKILLS_DIR/answer-me-with-html/scripts/am.mjs"
 ```
 
 - Prefer per-document `theme:`, `mode:` and `style:` settings in the draft. Preserve the original themes and the user's requested visual style.

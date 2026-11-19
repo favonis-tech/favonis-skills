@@ -8,6 +8,7 @@ description: >-
   3Blue1Brown-style explainer videos. Use when the user asks for Manim, a math, science or algorithm
   animation, or an animated explanation built from shapes, formulas and graphs. Not for live-action
   footage, AI-generated video, photo slideshows or slide decks.
+programs: [ffmpeg, xelatex, dvisvgm]
 localizations:
   zh-CN:
     display-name: Manim 数学动画
@@ -33,9 +34,9 @@ Write a Manim Community scene as a project source file, render it in the sandbox
 
 ## Environment
 
-- The Favonis sandbox image includes Manim Community with the Cairo renderer, FFmpeg, TeX Live (LaTeX, XeLaTeX, ctex, dvisvgm) and Noto CJK fonts. Run `python -m manim --version` once. If Manim is missing, the sandbox was created from an older image: tell the user and stop. Do not install it with pip; its Cairo and Pango builds need system packages that cannot be added in the sandbox.
-- The package directory is the `sandbox_path` returned by `skill_read` (normally `/skills/manim`) and is read-only. Read [references/authoring.md](references/authoring.md) before writing the first scene in a conversation, and read [scripts/render.py](scripts/render.py) once before running it. Run the script with an explicit interpreter: `python /skills/manim/scripts/render.py`.
-- Use the `shell` tool in `/project`. Paths passed to the script and to `present_files` are project-relative. Manim's cache and intermediate files stay in `/tmp/manim`.
+- The Favonis sandbox image includes Manim Community with the Cairo renderer, FFmpeg, TeX Live (LaTeX, XeLaTeX, ctex, dvisvgm) and Noto CJK fonts. Run `$FAVONIS_PYTHON -m manim --version` once. If Manim is missing, the sandbox was created from an older image: tell the user and stop. Do not install it with pip; its Cairo and Pango builds need system packages that cannot be added in the sandbox.
+- The package directory is `$SKILLS_DIR/manim` and is read-only. Read [references/authoring.md](references/authoring.md) before writing the first scene in a conversation, and read [scripts/render.py](scripts/render.py) once before running it. Run the script with an explicit interpreter: `$FAVONIS_PYTHON "$SKILLS_DIR/manim/scripts/render.py"`.
+- Use the `shell` tool from the project folder. Paths passed to the script and to `present_files` are project-relative. Manim's cache and intermediate files stay in `$TMPDIR/manim`.
 - Manim Community is not 3Blue1Brown's `manimgl`/`manimlib`; never import those. Never pass `-p`/`--preview` or `--renderer opengl`: the sandbox has no display or GPU.
 
 ## Workflow
@@ -46,19 +47,19 @@ Write a Manim Community scene as a project source file, render it in the sandbox
 4. **Draft render** at low quality with a contact sheet:
 
    ```bash
-   python /skills/manim/scripts/render.py animations/pythagoras.py Pythagoras --sheet /tmp/manim-review/pythagoras.png
+   $FAVONIS_PYTHON "$SKILLS_DIR/manim/scripts/render.py" animations/pythagoras.py Pythagoras --sheet "$TMPDIR/manim-review/pythagoras.png"
    ```
 
    On `"ok": false`, read `error`: its last lines name the failing source line or the LaTeX error. Fix the source and render again. Also resolve `warnings`, such as a missing font.
-5. **Check frames.** The sheet tiles evenly spaced frames, first and last included, in reading order; `sheet_times` gives their timestamps. Look at it with the `view` tool, which reads `/tmp` paths. Look for overlapping or clipped elements, text that is too small, wrongly rendered formulas, empty frames and leftovers from earlier beats. Fix and re-render until the draft is clean. Use `--sheet-frames 12` to `16` for longer scenes. If you cannot view images, say that the visual check was not performed.
+5. **Check frames.** The sheet tiles evenly spaced frames, first and last included, in reading order; `sheet_times` gives their timestamps. Look at it with the `view` tool, which reads files in the temporary directory. Look for overlapping or clipped elements, text that is too small, wrongly rendered formulas, empty frames and leftovers from earlier beats. Fix and re-render until the draft is clean. Use `--sheet-frames 12` to `16` for longer scenes. If you cannot view images, say that the visual check was not performed.
 6. **Final render** at the delivery quality into the project:
 
    ```bash
-   python /skills/manim/scripts/render.py animations/pythagoras.py Pythagoras --quality h --output outputs/勾股定理.mp4
+   $FAVONIS_PYTHON "$SKILLS_DIR/manim/scripts/render.py" animations/pythagoras.py Pythagoras --quality h --output outputs/勾股定理.mp4
    ```
 
    `h` (1080p60) is the default for delivery; use `m` for quick shares and `k` only on request. High quality takes several times longer than the draft, so pass a larger shell `timeout_ms` (up to 30 minutes) for long scenes. Check `duration`, `width` and `height` in the report, the shell `exit_code` and the project saving result.
-7. **Deliver** with `present_files`, passing the video and its source file. Briefly state the length, resolution and what the animation shows, plus any check you did not perform. Never return `/tmp` paths or sandbox URLs.
+7. **Deliver** with `present_files`, passing the video and its source file. Briefly state the length, resolution and what the animation shows, plus any check you did not perform. Never return temporary-directory paths or sandbox URLs.
 
 For several scenes, render each one without `--output`, then join the `rendered` files with FFmpeg's concat demuxer into one project file. Keep resolution and frame rate identical across the scenes.
 

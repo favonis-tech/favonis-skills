@@ -8,6 +8,7 @@ description: >-
   a known edit: Manim animations, slide or screen-recording videos with known shot times, or a cue
   list the user describes. Not for songs, lyrics, a named
   genre or realistic instruments without exact sync; use the audio skill's music generation for those.
+programs: [ffmpeg]
 localizations:
   zh-CN:
     display-name: 卡点配乐
@@ -33,8 +34,8 @@ Write or export a timeline, synthesize it with the bundled script, and deliver t
 
 ## Environment
 
-- The package directory is the `sandbox_path` returned by `skill_read` (normally `/skills/cue-score`) and is read-only. The command below is all you need from the script.
-- Use the `shell` tool in `/project`: `python /skills/cue-score/scripts/score.py TIMELINE.json --out audio/score.mp3`. It needs only NumPy, SciPy and FFmpeg, which the sandbox includes. Output is `.mp3`, `.m4a` or `.wav` at 48 kHz, normalized to −14 LUFS.
+- The package directory is `$SKILLS_DIR/cue-score` and is read-only. The command below is all you need from the script.
+- Use the `shell` tool from the project folder: `$FAVONIS_PYTHON "$SKILLS_DIR/cue-score/scripts/score.py" TIMELINE.json --out audio/score.mp3`. It needs only NumPy, SciPy and FFmpeg, which the sandbox includes. Output is `.mp3`, `.m4a` or `.wav` at 48 kHz, normalized to −14 LUFS.
 
 ## Timeline
 
@@ -97,7 +98,7 @@ For a video (a Manim render, a screen recording, an edited clip), take the shot 
 2. Run the script:
 
    ```bash
-   python /skills/cue-score/scripts/score.py audio/timeline.json --out audio/score.mp3
+   $FAVONIS_PYTHON "$SKILLS_DIR/cue-score/scripts/score.py" audio/timeline.json --out audio/score.mp3
    ```
 
    On `"ok": false`, `error` lists every invalid field with its section or cue index; fix them and run it again. `warnings` point out key changes between sections; change the chords unless the user asked for a modulation. For a different arrangement of the same timeline, pass another `--seed`.

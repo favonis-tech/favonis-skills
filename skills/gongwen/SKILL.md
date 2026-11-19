@@ -8,6 +8,7 @@ description: >-
   red header (版头), 发文字号, title, 主送机关, numbered levels, 附件说明, signature, date, 版记 and page
   numbers, then renders and checks it in the sandbox. Also reformats an existing draft into this layout.
   Not for ordinary reports, letters, contracts or slides that do not follow 公文 conventions.
+programs: [render-office]
 localizations:
   zh-CN:
     display-name: 公文写作
@@ -33,8 +34,8 @@ Write the document as a Markdown source in the project, typeset it with the bund
 
 ## Environment
 
-- The package directory is the `sandbox_path` returned by `skill_read` (normally `/skills/gongwen`) and is read-only. Read [references/writing.md](references/writing.md) before drafting or substantially revising a document: it covers choosing the 文种, 行文规则, structure, closing phrases and language. Read [references/layout.md](references/layout.md) when you need to explain a position on the page or a layout fix the report lists.
-- Run the script with `shell` in `/project`, with project-relative paths: `python /skills/gongwen/scripts/gongwen.py SOURCE.md --output OUT.docx`. It needs python-docx, PyYAML, PyMuPDF and LibreOffice (`render-office`), which the sandbox image provides. If an import fails, the sandbox was created from an older image: tell the user and stop instead of installing packages.
+- The package directory is `$SKILLS_DIR/gongwen` and is read-only. Read [references/writing.md](references/writing.md) before drafting or substantially revising a document: it covers choosing the 文种, 行文规则, structure, closing phrases and language. Read [references/layout.md](references/layout.md) when you need to explain a position on the page or a layout fix the report lists.
+- Run the script with `shell` from the project folder, with project-relative paths: `$FAVONIS_PYTHON "$SKILLS_DIR/gongwen/scripts/gongwen.py" SOURCE.md --output OUT.docx`. It needs python-docx, PyYAML, PyMuPDF and LibreOffice (`render-office`), which the sandbox image provides. If an import fails, the sandbox was created from an older image: tell the user and stop instead of installing packages.
 - Fonts: the DOCX asks for the standard fonts 方正小标宋简体, 仿宋_GB2312, 楷体_GB2312, 黑体 and 宋体, with fallbacks to 华文中宋, 仿宋 and 楷体, so it looks right on a Windows or WPS computer that has them. The sandbox has none of these: previews use open-source substitutes (Fandol, Noto CJK), so glyph shapes differ while lines, positions and pagination are what the preview verifies. Never download, embed or bundle commercial fonts.
 
 ## Workflow
@@ -45,7 +46,7 @@ Write the document as a Markdown source in the project, typeset it with the bund
 4. **Typeset:**
 
    ```bash
-   python /skills/gongwen/scripts/gongwen.py 公文/关于××的通知.md --output 公文/关于××的通知.docx
+   $FAVONIS_PYTHON "$SKILLS_DIR/gongwen/scripts/gongwen.py" 公文/关于××的通知.md --output 公文/关于××的通知.docx
    ```
 
    Add `--pdf 公文/关于××的通知.pdf` when the user wants a PDF. The script renders the document twice or more with LibreOffice; allow a shell `timeout_ms` of about 3 minutes.

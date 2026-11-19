@@ -33,7 +33,7 @@ Build the page as an Application with the `app` skill and follow its workflow. T
 
 ## Environment
 
-- The package directory is the `sandbox_path` returned by `skill_read` (normally `/skills/web-serial`) and is read-only. `assets/example/client` is a minimal serial monitor laid over the `web-static` scaffold: device chooser, baud rate, connect and disconnect, a received/sent log, one line of text to send, a rolling chart of every value it finds, and a simulated device. Read its `src/serial/` modules and `src/chart.ts` before writing serial code.
+- The package directory is `$SKILLS_DIR/web-serial` and is read-only. `assets/example/client` is a minimal serial monitor laid over the `web-static` scaffold: device chooser, baud rate, connect and disconnect, a received/sent log, one line of text to send, a rolling chart of every value it finds, and a simulated device. Read its `src/serial/` modules and `src/chart.ts` before writing serial code.
 - Read the references when the task touches them: [references/framing.md](references/framing.md) for line and binary framing, encodings, hex, read errors and request/response; [references/plotting.md](references/plotting.md) for charts, trajectories, spectra, recording and export; [references/firmware.md](references/firmware.md) for protocol design, bandwidth and the code on the device.
 - Only the user's browser can reach their serial ports. The sandbox, its headless browser and the platform cannot, so every check you run uses the simulated device, and the user connects the real hardware.
 
@@ -50,7 +50,7 @@ Build the page as an Application with the `app` skill and follow its workflow. T
 2. **Start from the example.** Scaffold `web-static` through the `app` skill, then lay the example over it and drop the scaffold's starter copy:
 
    ```bash
-   cp -R --no-preserve=mode /skills/web-serial/assets/example/client/. client/
+   cp -R --no-preserve=mode "$SKILLS_DIR/web-serial/assets/example/client/." client/
    rm client/src/content.json
    ```
 
